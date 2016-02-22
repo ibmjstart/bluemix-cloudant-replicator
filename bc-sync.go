@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-
 	"github.com/cloudfoundry/cli/plugin"
+	"os"
+	"strings"
 )
 
 /*
@@ -28,10 +30,21 @@ type BCSyncPlugin struct{}
 *	1 should the plugin exits nonzero.
  */
 func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
-	// Ensure that we called the command basic-plugin-command
-	if args[0] == "basic-plugin-command" {
-		fmt.Println("Running the basic-plugin-command")
+
+	reader := bufio.NewReader(os.Stdin)
+	apps_list, _ := cliConnection.GetApps()
+	fmt.Println("\nCurrent apps:\n")
+	//var app_names []string
+	//app_names = make([]string, len(apps))
+	fmt.Println(apps_list)
+	for i := 0; i < len(apps_list); i++ {
+		fmt.Println(apps_list[i].Name)
 	}
+	fmt.Println("\nWhich app's databases would you like to sync?")
+	app_name, _ := reader.ReadString('\n')
+	app_name = strings.TrimRight(app_name, "\n")
+	app, err := cliConnection.GetApp(app_name)
+	fmt.Println(app.Services)
 }
 
 /*
@@ -50,7 +63,7 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
  */
 func (c *BCSyncPlugin) GetMetadata() plugin.PluginMetadata {
 	return plugin.PluginMetadata{
-		Name: "MyBasicPlugin",
+		Name: "bluemix-cloudant-sync",
 		Version: plugin.VersionType{
 			Major: 1,
 			Minor: 0,
@@ -63,13 +76,13 @@ func (c *BCSyncPlugin) GetMetadata() plugin.PluginMetadata {
 		},
 		Commands: []plugin.Command{
 			plugin.Command{
-				Name:     "basic-plugin-command",
-				HelpText: "Basic plugin command's help text",
+				Name:     "sync-app-dbs",
+				HelpText: "bluemix-cloudant-sync plugin command's help text",
 
 				// UsageDetails is optional
 				// It is used to show help of usage of each command
 				UsageDetails: plugin.Usage{
-					Usage: "basic-plugin-command\n   cf basic-plugin-command",
+					Usage: "sync-app-dbs\n   cf sync-app-dbs",
 				},
 			},
 		},
