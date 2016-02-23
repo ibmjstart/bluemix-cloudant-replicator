@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/cloudfoundry/cli/plugin"
+	//"github.com/cloudfoundry/cli/plugin/models"
 	"os"
+	//"reflect"
+	"regexp"
 	"strings"
 )
 
@@ -14,6 +17,12 @@ import (
 *
  */
 type BCSyncPlugin struct{}
+
+type CloudantCreds struct {
+	username string
+	password string
+	url      string
+}
 
 /*
 *	This function must be implemented by any plugin because it is part of the
@@ -34,18 +43,52 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 	reader := bufio.NewReader(os.Stdin)
 	apps_list, _ := cliConnection.GetApps()
 	fmt.Println("\nCurrent apps:\n")
-	//var app_names []string
-	//app_names = make([]string, len(apps))
-	fmt.Println(apps_list)
 	for i := 0; i < len(apps_list); i++ {
 		fmt.Println(apps_list[i].Name)
 	}
 	fmt.Println("\nWhich app's databases would you like to sync?")
 	app_name, _ := reader.ReadString('\n')
 	app_name = strings.TrimRight(app_name, "\n")
-	app, err := cliConnection.GetApp(app_name)
-	fmt.Println(app.Services)
+	//app, _ := cliConnection.GetApp(app_name)
+	fmt.Println("\n")
+	fmt.Println(getCreds(cliConnection, app_name))
 }
+
+func getCreds(cliConnection plugin.CliConnection, app_name string) CloudantCreds {
+	var creds CloudantCreds
+	creds = CloudantCreds{"", "", ""}
+	env, _ := cliConnection.CliCommandWithoutTerminalOutput("env", app_name)
+	for i := 0; i < len(env); i++ {
+		if strings.Index(env[i], "cloudantNoSQLDB") != -1 {
+			user_reg, _ := regexp.Compile("\"username\": \"([\x00-\x7F]+)\"")
+			pass_reg, _ := regexp.Compile("\"password\": \"([\x00-\x7F]+)\"")
+			url_reg, _ := regexp.Compile("\"url\": \"([\x00-\x7F]+)\"")
+			creds.username = strings.Split(user_reg.FindString(env[i]), "\"")[3]
+			creds.password = strings.Split(pass_reg.FindString(env[i]), "\"")[3]
+			creds.url = strings.Split(url_reg.FindString(env[i]), "\"")[3]
+		}
+	}
+	return creds
+}
+
+/*
+//Did not need to look for the service in this manner since the service credentials are with the app and not the service itself
+//plus, the app only had user definied environment variables associated with it in the GetAppModel.
+func getCloudantServices(cliConnection plugin.CliConnection, app plugin_models.GetAppModel) plugin_models.GetService_Model {
+	var cloudantService plugin_models.GetService_Model
+	services := app.Services
+	for i := 0; i < len(services); i++ {
+		s, _ := cliConnection.GetService(services[i].Name)
+		if s.ServiceOffering.Name == "cloudantNoSQLDB" {
+			fmt.Println(s.Name)
+			fmt.Println(reflect.TypeOf(s))
+			cloudantService = s
+			break
+		}
+	}
+	return cloudantService
+}
+*/
 
 /*
 *	This function must be implemented as part of the	plugin interface
