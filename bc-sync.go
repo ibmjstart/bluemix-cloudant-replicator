@@ -5,11 +5,16 @@ import (
 	"fmt"
 	"github.com/cloudfoundry/cli/plugin"
 	//"github.com/cloudfoundry/cli/plugin/models"
+	"bytes"
+	"io/ioutil"
+	"net/http"
 	"os"
 	//"reflect"
 	"regexp"
 	"strings"
 )
+
+var ENDPOINTS = [3]string{"https://api.ng.bluemix.net", "https://api.au-syd.bluemix.net", "https://api.eu-gb.bluemix.net"}
 
 /*
 *	This is the struct implementing the interface defined by the core CLI. It can
@@ -22,6 +27,7 @@ type CloudantCreds struct {
 	username string
 	password string
 	url      string
+	cookie   string
 }
 
 /*
@@ -39,7 +45,31 @@ type CloudantCreds struct {
 *	1 should the plugin exits nonzero.
  */
 func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
+	var appName string
+	if len(args) > 1 {
+		appName = args[1]
+	} else {
+		appName = getAppName(cliConnection)
+	}
+	var httpClient = &http.Client{}
+	cloudantAccounts, err := getCloudantAccounts(cliConnection, httpClient, appName)
+	if err != nil {
+		return
+	}
+	deleteCookies(httpClient, cloudantAccounts)
+}
 
+/*
+func initialPrompt() (string, string){
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("\nWhich app's databases would you like to sync?")
+	appName, _ := reader.ReadString('\n')
+	appName = strings.TrimRight(appName, "\n")
+
+}
+*/
+
+func getAppName(cliConnection plugin.CliConnection) string {
 	reader := bufio.NewReader(os.Stdin)
 	apps_list, _ := cliConnection.GetApps()
 	fmt.Println("\nCurrent apps:\n")
@@ -47,17 +77,56 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		fmt.Println(apps_list[i].Name)
 	}
 	fmt.Println("\nWhich app's databases would you like to sync?")
-	app_name, _ := reader.ReadString('\n')
-	app_name = strings.TrimRight(app_name, "\n")
-	//app, _ := cliConnection.GetApp(app_name)
+	appName, _ := reader.ReadString('\n')
+	appName = strings.TrimRight(appName, "\n")
 	fmt.Println("\n")
-	fmt.Println(getCreds(cliConnection, app_name))
+	return appName
 }
 
-func getCreds(cliConnection plugin.CliConnection, app_name string) CloudantCreds {
+func deleteCookies(httpClient *http.Client, cloudantAccounts [3]CloudantCreds) {
+	for i := 0; i < len(cloudantAccounts); i++ {
+		cred := cloudantAccounts[i]
+		url := "http://" + cred.username + ".cloudant.com/_session"
+		body := "name=" + cred.username + "&password=" + cred.password
+		req, err := http.NewRequest("POST", url, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Cookie", cred.cookie)
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			fmt.Println(err)
+		}
+		//Just for debugging purposes
+		fmt.Println("response Status:", resp.Status)
+		fmt.Println("response Headers:", resp.Header)
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		fmt.Println("response Body:", string(respBody))
+		resp.Body.Close()
+	}
+}
+
+func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Client, appName string) ([3]CloudantCreds, error) {
+	var cloudantAccounts [3]CloudantCreds
+	for i := 0; i < len(ENDPOINTS); i++ {
+		cliConnection.CliCommand("api", ENDPOINTS[i])
+		cliConnection.CliCommand("login")
+		cred, err := getCreds(cliConnection, appName)
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("Make sure that you are giving is a valid app IN ALL REGIONS and try again")
+			return cloudantAccounts, err
+		}
+		cred.cookie = getCookie(cred, httpClient)
+		cloudantAccounts[i] = cred
+	}
+	return cloudantAccounts, nil
+}
+
+func getCreds(cliConnection plugin.CliConnection, appName string) (CloudantCreds, error) {
 	var creds CloudantCreds
-	creds = CloudantCreds{"", "", ""}
-	env, _ := cliConnection.CliCommandWithoutTerminalOutput("env", app_name)
+	env, err := cliConnection.CliCommandWithoutTerminalOutput("env", appName)
+	if err != nil {
+		return creds, err
+	}
 	for i := 0; i < len(env); i++ {
 		if strings.Index(env[i], "cloudantNoSQLDB") != -1 {
 			user_reg, _ := regexp.Compile("\"username\": \"([\x00-\x7F]+)\"")
@@ -66,9 +135,30 @@ func getCreds(cliConnection plugin.CliConnection, app_name string) CloudantCreds
 			creds.username = strings.Split(user_reg.FindString(env[i]), "\"")[3]
 			creds.password = strings.Split(pass_reg.FindString(env[i]), "\"")[3]
 			creds.url = strings.Split(url_reg.FindString(env[i]), "\"")[3]
+			break
 		}
 	}
-	return creds
+	return creds, nil
+}
+
+func getCookie(cred CloudantCreds, httpClient *http.Client) string {
+	url := "http://" + cred.username + ".cloudant.com/_session"
+	reqBody := "name=" + cred.username + "&password=" + cred.password
+	fmt.Println(reqBody)
+	req, err := http.NewRequest("POST", url, bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Println(err)
+	}
+	//Just for debugging purposes
+	fmt.Println("response Status:", resp.Status)
+	fmt.Println("response Headers:", resp.Header)
+	respBody, _ := ioutil.ReadAll(resp.Body)
+	fmt.Println("response Body:", string(respBody))
+	resp.Body.Close()
+	cookie := resp.Header.Get("Set-Cookie")
+	return cookie
 }
 
 /*
@@ -120,7 +210,7 @@ func (c *BCSyncPlugin) GetMetadata() plugin.PluginMetadata {
 		Commands: []plugin.Command{
 			plugin.Command{
 				Name:     "sync-app-dbs",
-				HelpText: "bluemix-cloudant-sync plugin command's help text",
+				HelpText: "synchronizes Cloudant databases for multi-regional apps",
 
 				// UsageDetails is optional
 				// It is used to show help of usage of each command
