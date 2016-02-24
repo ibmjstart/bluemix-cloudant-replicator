@@ -58,8 +58,13 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		if err != nil {
 			return
 		}
-		db := getDatabase(httpClient, cloudantAccounts[0])
-		//createReplicatorDatabases(httpClient, cloudantAccounts)
+		var db string
+		if len(args) > 2 {
+			db = args[2]
+		} else {
+			db = getDatabase(httpClient, cloudantAccounts[2])
+		}
+		createReplicatorDatabases(httpClient, cloudantAccounts)
 		shareDatabases(db, httpClient, cloudantAccounts)
 		deleteCookies(httpClient, cloudantAccounts)
 	}
@@ -79,8 +84,9 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []Cloud
 	for i := 0; i < len(cloudantAccounts); i++ {
 		cred := cloudantAccounts[i]
 		url := "http://" + cred.username + ".cloudant.com/_replicator"
-		req, _ := http.NewRequest("POST", url, bytes.NewBufferString(""))
+		req, _ := http.NewRequest("PUT", url, bytes.NewBufferString(""))
 		req.Header.Set("Cookie", cred.cookie)
+		//req.Header.Set("Content-Type", "application/json")
 		resp, _ := httpClient.Do(req)
 		fmt.Println("response Status:", resp.Status)
 		fmt.Println("response Headers:", resp.Header)
