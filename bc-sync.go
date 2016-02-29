@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/cloudfoundry/cli/plugin"
 	"io/ioutil"
@@ -77,7 +78,11 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		if db == "" {
 			db = getDatabase(httpClient, cloudantAccounts[0])
 		}
-		shareDatabases(db, httpClient, cloudantAccounts)
+		err = shareDatabases(db, httpClient, cloudantAccounts)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		createReplicatorDatabases(httpClient, cloudantAccounts)
 		createReplicationDocuments(db, httpClient, cloudantAccounts)
 		deleteCookies(httpClient, cloudantAccounts)
@@ -103,10 +108,9 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 				rep["continuous"] = true
 				bd, _ := json.MarshalIndent(rep, " ", "  ")
 				body := string(bd)
-				req, _ := http.NewRequest("POST", url, bytes.NewBufferString(body))
-				req.Header.Set("Cookie", account.cookie)
-				req.Header.Set("Content-Type", "application/json")
-				resp, _ := httpClient.Do(req)
+				headers := map[string]string{"Content-Type": "application/json", "Cookie": account.cookie}
+				resp, _ := makeRequest(httpClient, "POST", url, body, headers)
+				//printResponse(resp)
 				resp.Body.Close()
 			}
 		}
@@ -122,10 +126,9 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []Cloud
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
 		url := "http://" + account.username + ".cloudant.com/_replicator"
-		req, _ := http.NewRequest("PUT", url, bytes.NewBufferString(""))
-		req.Header.Set("Cookie", account.cookie)
-		req.Header.Set("Content-Type", "application/json")
-		resp, _ := httpClient.Do(req)
+		headers := map[string]string{"Content-Type": "application/json", "Cookie": account.cookie}
+		resp, _ := makeRequest(httpClient, "PUT", url, "", headers)
+		//printResponse(resp)
 		resp.Body.Close()
 	}
 }
@@ -135,14 +138,16 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []Cloud
 *	replicated and modifies those permissions to allow read and replicate
 *	permissions for every other database
  */
-func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []CloudantAccount) {
+func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []CloudantAccount) error {
 	fmt.Println("\nModifying database permissions\n")
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
 		url := "http://" + account.username + ".cloudant.com/_api/v2/db/" + db + "/_security"
-		req, _ := http.NewRequest("GET", url, bytes.NewBufferString(""))
-		req.Header.Set("Cookie", account.cookie)
-		resp, _ := httpClient.Do(req)
+		headers := map[string]string{"Cookie": account.cookie}
+		resp, _ := makeRequest(httpClient, "GET", url, "", headers)
+		if resp.Status != "200 OK" {
+			return errors.New("Makes sure that a valid database is being given")
+		}
 		respBody, _ := ioutil.ReadAll(resp.Body)
 		perms := string(respBody)
 		resp.Body.Close()
@@ -160,12 +165,12 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []Cloud
 		}
 		bd, _ := json.MarshalIndent(parsed, " ", "  ")
 		body := string(bd)
-		sharereq, _ := http.NewRequest("PUT", url, bytes.NewBufferString(body))
-		sharereq.Header.Set("Cookie", account.cookie)
-		sharereq.Header.Set("Content-Type", "application/json")
-		shareresp, _ := httpClient.Do(sharereq)
-		shareresp.Body.Close()
+		headers = map[string]string{"Content-Type": "application/json", "Cookie": account.cookie}
+		resp, _ = makeRequest(httpClient, "PUT", url, body, headers)
+		//printResponse(resp)
+		resp.Body.Close()
 	}
+	return nil
 }
 
 /*
@@ -194,9 +199,8 @@ func getDatabase(httpClient *http.Client, account CloudantAccount) string {
  */
 func getAllDatabases(httpClient *http.Client, account CloudantAccount) []string {
 	url := "http://" + account.username + ".cloudant.com/_all_dbs"
-	req, _ := http.NewRequest("GET", url, bytes.NewBufferString(""))
-	req.Header.Set("Cookie", account.cookie)
-	resp, _ := httpClient.Do(req)
+	headers := map[string]string{"Cookie": account.cookie}
+	resp, _ := makeRequest(httpClient, "GET", url, "", headers)
 	respBody, _ := ioutil.ReadAll(resp.Body)
 	dbsStr := string(respBody)
 	var dbs []string
@@ -235,10 +239,9 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []CloudantAccount) 
 		account := cloudantAccounts[i]
 		url := "http://" + account.username + ".cloudant.com/_session"
 		body := "name=" + account.username + "&password=" + account.password
-		req, _ := http.NewRequest("POST", url, bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Cookie", account.cookie)
-		resp, _ := httpClient.Do(req)
+		headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.cookie}
+		resp, _ := makeRequest(httpClient, "POST", url, body, headers)
+		//printResponse(resp)
 		resp.Body.Close()
 	}
 }
@@ -251,20 +254,23 @@ func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 	cloudantAccounts := make([]CloudantAccount, len(ENDPOINTS))
 	username, _ := cliConnection.Username()
 	startingEndpoint, _ := cliConnection.ApiEndpoint()
+	skipFirst := startingEndpoint == ENDPOINTS[0]
 	fmt.Println("\nRetrieving cookies for Cloudant authentication\n")
 	for i := 0; i < len(ENDPOINTS); i++ {
-		loggedIn, _ := cliConnection.IsLoggedIn()
-		if !loggedIn || startingEndpoint != ENDPOINTS[i] {
+		if !skipFirst || i != 0 {
 			cliConnection.CliCommandWithoutTerminalOutput("api", ENDPOINTS[i])
 			if password != "" {
-				cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+				if org != "" {
+					cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+				} else {
+					cliConnection.CliCommand("login", "-u", username, "-p", password)
+				}
 			} else {
 				cliConnection.CliCommand("login", "-u", username, "-o", org)
 			}
 		}
 		account, err := getAccount(cliConnection, appName)
 		if err != nil {
-			fmt.Println(err)
 			fmt.Println("Make sure that you are giving an app that exists IN ALL REGIONS and try again")
 			return cloudantAccounts, err
 		}
@@ -273,7 +279,11 @@ func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 	}
 	cliConnection.CliCommandWithoutTerminalOutput("api", startingEndpoint) //point back to where the user started
 	if password != "" {
-		cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+		if org != "" {
+			cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+		} else {
+			cliConnection.CliCommand("login", "-u", username, "-p", password)
+		}
 	} else {
 		cliConnection.CliCommand("login", "-u", username, "-o", org)
 	}
@@ -310,13 +320,38 @@ func getAccount(cliConnection plugin.CliConnection, appName string) (CloudantAcc
  */
 func getCookie(account CloudantAccount, httpClient *http.Client) string {
 	url := "http://" + account.username + ".cloudant.com/_session"
-	reqBody := "name=" + account.username + "&password=" + account.password
-	req, _ := http.NewRequest("POST", url, bytes.NewBufferString(reqBody))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, _ := httpClient.Do(req)
+	body := "name=" + account.username + "&password=" + account.password
+	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	//req, _ := http.NewRequest("POST", url, bytes.NewBufferString(reqBody))
+	//req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	//resp, _ := httpClient.Do(req)
+	resp, _ := makeRequest(httpClient, "POST", url, body, headers)
 	cookie := resp.Header.Get("Set-Cookie")
+	//printResponse(resp)
 	resp.Body.Close()
 	return cookie
+}
+
+/*
+* 	Creates a new http request based on the params and sends it, returning the response.
+ */
+func makeRequest(httpClient *http.Client, rType string, url string, body string, headers map[string]string) (*http.Response, error) {
+	req, _ := http.NewRequest(rType, url, bytes.NewBufferString(body))
+	for header, value := range headers {
+		req.Header.Set(header, value)
+	}
+	return httpClient.Do(req)
+
+}
+
+/*
+* 	For debugging purposes
+ */
+func printResponse(resp *http.Response) {
+	fmt.Println("Status: " + resp.Status)
+	fmt.Println("Header: ", resp.Header)
+	body, _ := ioutil.ReadAll(resp.Body)
+	fmt.Println("Body: ", string(body))
 }
 
 /*
