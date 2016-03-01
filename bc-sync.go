@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-var ENDPOINTS = []string{"https://api.ng.bluemix.net", "https://api.au-syd.bluemix.net", "https://api.eu-gb.bluemix.net"}
+var ENDPOINTS = []string{"https://api.ng.bluemix.net", "https://api.au-syd.bluemix.net"} //, "https://api.eu-gb.bluemix.net"}
 
 /*
 *	This is the struct implementing the interface defined by the core CLI. It can
@@ -59,21 +59,31 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 			appName = bcs_prompts.GetAppName(cliConnection)
 		}
 		var httpClient = &http.Client{}
-		cloudantAccounts, err := getCloudantAccounts(cliConnection, httpClient, appName, password)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+
+		//This is all necessary to prompt user for database at top of script
+		cloudantAccounts := make([]cam.CloudantAccount, len(ENDPOINTS))
+		username, _ := cliConnection.Username()
+		currOrg, _ := cliConnection.GetCurrentOrg()
+		account, err := createAccount(cliConnection, httpClient, ENDPOINTS[0], username, password, currOrg.Name, appName)
+		cloudantAccounts[0] = account
+
 		if len(dbs) == 0 {
 			dbs = bcs_prompts.GetDatabase(httpClient, cloudantAccounts[0])
 		}
-		err = shareDatabases(dbs[0], httpClient, cloudantAccounts)
+		cloudantAccounts, err = getCloudantAccounts(cliConnection, httpClient, cloudantAccounts, appName, password)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		createReplicatorDatabases(httpClient, cloudantAccounts)
-		createReplicationDocuments(dbs[0], httpClient, cloudantAccounts)
+		for i := 0; i < len(dbs); i++ {
+			err = shareDatabases(dbs[i], httpClient, cloudantAccounts)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			createReplicationDocuments(dbs[i], httpClient, cloudantAccounts)
+		}
 		deleteCookies(httpClient, cloudantAccounts)
 	}
 }
@@ -84,7 +94,7 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 *	_replicator database.
  */
 func createReplicationDocuments(db string, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
-	fmt.Println("\nCreating replication documents\n")
+	fmt.Println("\nCreating replication documents for " + db + "\n")
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
 		url := "http://" + account.Username + ".cloudant.com/_replicator"
@@ -126,7 +136,7 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.C
 *	permissions for every other database
  */
 func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) error {
-	fmt.Println("\nModifying database permissions\n")
+	fmt.Println("\nModifying database permissions for " + db + "\n")
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
 		url := "http://" + account.Username + ".cloudant.com/_api/v2/db/" + db + "/_security"
@@ -146,8 +156,28 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.C
 				if parsed["cloudant"] != nil {
 					temp_parsed = parsed["cloudant"].(map[string]interface{})
 				}
-				//TODO:CHECK FOR USER BEFORE CHANGING PERMISSIONS
-				temp_parsed[cloudantAccounts[j].Username] = []string{"_reader", "_replicator"}
+				if temp_parsed[cloudantAccounts[j].Username] == nil {
+					temp_parsed[cloudantAccounts[j].Username] = []string{"_reader", "_replicator"}
+				} else {
+					currPerms := temp_parsed[cloudantAccounts[j].Username].([]interface{})
+					addRead := true
+					addRep := true
+					for k := 0; k < len(currPerms); k++ {
+						if currPerms[k].(string) == "_reader" {
+							addRead = false
+						}
+						if currPerms[k].(string) == "_replicator" {
+							addRep = false
+						}
+					}
+					if addRead {
+						currPerms = append(currPerms, "_reader")
+					}
+					if addRep {
+						currPerms = append(currPerms, "_replicator")
+					}
+					temp_parsed[cloudantAccounts[j].Username] = currPerms
+				}
 				parsed["cloudant"] = map[string]interface{}(temp_parsed)
 			}
 		}
@@ -175,28 +205,34 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []cam.CloudantAccou
 	}
 }
 
+func createAccount(cliConnection plugin.CliConnection, httpClient *http.Client, endpoint string, username string, password string, org string, appname string) (cam.CloudantAccount, error) {
+	fmt.Println("Retrieving CloudantNoSQLDB credentials for '" + appname + "' in '" + endpoint + "'\n")
+	cliConnection.CliCommandWithoutTerminalOutput("api", endpoint)
+	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+	account, err := getAccountCreds(cliConnection, appname)
+	if err != nil {
+		return account, err
+	}
+	account.Cookie = getCookie(account, httpClient)
+	return account, nil
+}
+
 /*
 *	Cycles through all endpoints and retrieves the Cloudant
 *	credentials for the specified app in each region.
  */
-func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Client, appName string, password string) ([]cam.CloudantAccount, error) {
-	cloudantAccounts := make([]cam.CloudantAccount, len(ENDPOINTS))
+func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount, appname string, password string) ([]cam.CloudantAccount, error) {
 	username, _ := cliConnection.Username()
 	currOrg, _ := cliConnection.GetCurrentOrg()
 	org := currOrg.Name
 	startingEndpoint, _ := cliConnection.ApiEndpoint()
-	fmt.Println("\nRetrieving cookies for Cloudant authentication\n")
-	for i := 0; i < len(ENDPOINTS); i++ {
-		cliConnection.CliCommandWithoutTerminalOutput("api", ENDPOINTS[i])
-		cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
-		account, err := getAccount(cliConnection, appName)
+	for i := 1; i < len(ENDPOINTS); i++ {
+		account, err := createAccount(cliConnection, httpClient, ENDPOINTS[i], username, password, org, appname)
 		if err != nil {
 			return cloudantAccounts, err
 		}
-		account.Cookie = getCookie(account, httpClient)
 		cloudantAccounts[i] = account
 	}
-	fmt.Println("\nReturning you to your original api endpoint.\nTo avoid all of these manual logins, consider using the -p option.\n")
 	cliConnection.CliCommandWithoutTerminalOutput("api", startingEndpoint) //point back to where the user started
 	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
 	return cloudantAccounts, nil
@@ -206,7 +242,7 @@ func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 *	Parses the environment variables for an app in order to get the
 *	Cloudant username, password, and url
  */
-func getAccount(cliConnection plugin.CliConnection, appName string) (cam.CloudantAccount, error) {
+func getAccountCreds(cliConnection plugin.CliConnection, appName string) (cam.CloudantAccount, error) {
 	var account cam.CloudantAccount
 	env, err := cliConnection.CliCommandWithoutTerminalOutput("env", appName)
 	if err != nil {

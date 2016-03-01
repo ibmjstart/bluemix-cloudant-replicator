@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 /*
@@ -30,7 +31,7 @@ func GetPassword() string {
 	fmt.Print("\nYour password is necessary in order for bluemix-cloudant-sync to login across multiple regions.\n")
 	fmt.Print("\nPassword: ")
 	pw, _ := terminal.ReadPassword(0)
-	fmt.Println()
+	fmt.Println("\n")
 	return string(pw)
 }
 
@@ -41,22 +42,28 @@ func GetPassword() string {
 func GetDatabase(httpClient *http.Client, account cam.CloudantAccount) []string {
 	reader := bufio.NewReader(os.Stdin)
 	dbs := getAllDatabases(httpClient, account)
-	fmt.Println("Current databases:")
+	fmt.Println("Current databases:\n")
 	for i := 0; i < len(dbs); i++ {
 		fmt.Println(strconv.Itoa(i+1) + ". " + dbs[i])
 	}
 	fmt.Println(strconv.Itoa(len(dbs)+1) + ". sync all databases")
 	fmt.Println("\nWhich database would you like to sync?")
 	db, _, _ := reader.ReadLine()
+	selected_dbs := strings.Split(string(db), ",")
 	fmt.Println()
-	if i, err := strconv.Atoi(string(db)); err == nil {
-		if i <= len(dbs) {
-			return []string{dbs[i-1]}
+	var d []string
+	for i := 0; i < len(selected_dbs); i++ {
+		if j, err := strconv.Atoi(selected_dbs[i]); err == nil {
+			if j <= len(dbs) {
+				d = append(d, dbs[j-1])
+			} else if j == len(dbs)+1 {
+				return dbs
+			}
 		} else {
-			return dbs
+			d = append(d, selected_dbs[i])
 		}
 	}
-	return []string{string(db)}
+	return d
 }
 
 /*
@@ -72,7 +79,13 @@ func getAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []str
 	var dbs []string
 	json.Unmarshal([]byte(dbsStr), &dbs)
 	resp.Body.Close()
-	return dbs
+	var noRepDbs []string
+	for i := 0; i < len(dbs); i++ {
+		if dbs[i] != "_replicator" {
+			noRepDbs = append(noRepDbs, dbs[i])
+		}
+	}
+	return noRepDbs
 }
 
 /*
