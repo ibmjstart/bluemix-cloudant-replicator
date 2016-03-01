@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cloudfoundry/cli/plugin"
+	"golang.org/x/crypto/ssh/terminal"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -47,46 +48,51 @@ type CloudantAccount struct {
  */
 func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 	if args[0] == "sync-app-dbs" {
-		var appName string
-		var db string
-		var password string
-		currOrg, _ := cliConnection.GetCurrentOrg()
-		org := currOrg.Name
+		var appName, password string
+		var dbs []string
 		loggedIn, _ := cliConnection.IsLoggedIn()
 		if !loggedIn {
 			fmt.Println("\nPlease login first via 'cf login'\n")
 			return
 		}
+		password = getPassword()
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
 			case "-a":
 				appName = args[i+1]
 			case "-d":
-				db = args[i+1]
-			case "-p":
-				password = args[i+1]
+				dbs = strings.Split(args[i+1], ",")
 			}
 		}
 		if appName == "" {
 			appName = getAppName(cliConnection)
 		}
 		var httpClient = &http.Client{}
-		cloudantAccounts, err := getCloudantAccounts(cliConnection, httpClient, appName, password, org)
+		cloudantAccounts, err := getCloudantAccounts(cliConnection, httpClient, appName, password)
 		if err != nil {
+			fmt.Println(err)
 			return
 		}
-		if db == "" {
-			db = getDatabase(httpClient, cloudantAccounts[0])
+		if len(dbs) == 0 {
+			dbs = getDatabase(httpClient, cloudantAccounts[0])
 		}
-		err = shareDatabases(db, httpClient, cloudantAccounts)
+		err = shareDatabases(dbs[0], httpClient, cloudantAccounts)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		createReplicatorDatabases(httpClient, cloudantAccounts)
-		createReplicationDocuments(db, httpClient, cloudantAccounts)
+		createReplicationDocuments(dbs[0], httpClient, cloudantAccounts)
 		deleteCookies(httpClient, cloudantAccounts)
 	}
+}
+
+func getPassword() string {
+	fmt.Print("\nYour password is necessary in order for bluemix-cloudant-sync to login across multiple regions.\n")
+	fmt.Print("\nPassword: ")
+	pw, _ := terminal.ReadPassword(0)
+	fmt.Println()
+	return string(pw)
 }
 
 /*
@@ -110,7 +116,6 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 				body := string(bd)
 				headers := map[string]string{"Content-Type": "application/json", "Cookie": account.cookie}
 				resp, _ := makeRequest(httpClient, "POST", url, body, headers)
-				//printResponse(resp)
 				resp.Body.Close()
 			}
 		}
@@ -128,7 +133,6 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []Cloud
 		url := "http://" + account.username + ".cloudant.com/_replicator"
 		headers := map[string]string{"Content-Type": "application/json", "Cookie": account.cookie}
 		resp, _ := makeRequest(httpClient, "PUT", url, "", headers)
-		//printResponse(resp)
 		resp.Body.Close()
 	}
 }
@@ -159,6 +163,7 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []Cloud
 				if parsed["cloudant"] != nil {
 					temp_parsed = parsed["cloudant"].(map[string]interface{})
 				}
+				//TODO:CHECK FOR USER BEFORE CHANGING PERMISSIONS
 				temp_parsed[cloudantAccounts[j].username] = []string{"_reader", "_replicator"}
 				parsed["cloudant"] = map[string]interface{}(temp_parsed)
 			}
@@ -167,7 +172,6 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []Cloud
 		body := string(bd)
 		headers = map[string]string{"Content-Type": "application/json", "Cookie": account.cookie}
 		resp, _ = makeRequest(httpClient, "PUT", url, body, headers)
-		//printResponse(resp)
 		resp.Body.Close()
 	}
 	return nil
@@ -177,20 +181,25 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []Cloud
 *	Lists all databases for a specified CloudantAccount and
 *	prompts the user to select one
  */
-func getDatabase(httpClient *http.Client, account CloudantAccount) string {
+func getDatabase(httpClient *http.Client, account CloudantAccount) []string {
 	reader := bufio.NewReader(os.Stdin)
 	dbs := getAllDatabases(httpClient, account)
 	fmt.Println("Current databases:")
 	for i := 0; i < len(dbs); i++ {
 		fmt.Println(strconv.Itoa(i+1) + ". " + dbs[i])
 	}
+	fmt.Println(strconv.Itoa(len(dbs)+1) + ". sync all databases")
 	fmt.Println("\nWhich database would you like to sync?")
 	db, _, _ := reader.ReadLine()
 	fmt.Println()
 	if i, err := strconv.Atoi(string(db)); err == nil {
-		return dbs[i-1]
+		if i <= len(dbs) {
+			return []string{dbs[i-1]}
+		} else {
+			return dbs
+		}
 	}
-	return string(db)
+	return []string{string(db)}
 }
 
 /*
@@ -215,13 +224,15 @@ func getAllDatabases(httpClient *http.Client, account CloudantAccount) []string 
 func getAppName(cliConnection plugin.CliConnection) string {
 	reader := bufio.NewReader(os.Stdin)
 	apps_list, _ := cliConnection.GetApps()
+	currEndpoint, _ := cliConnection.ApiEndpoint()
+	currOrg, _ := cliConnection.GetCurrentOrg()
 	if len(apps_list) > 0 {
-		fmt.Println("\nCurrent apps:\n")
+		fmt.Println("\nThese are all existing apps in the org '" + currOrg.Name + "' and at '" + currEndpoint + "':\n")
 		for i := 0; i < len(apps_list); i++ {
 			fmt.Println(strconv.Itoa(i+1) + ". " + apps_list[i].Name)
 		}
 	}
-	fmt.Println("\nWhich app's databases would you like to sync?")
+	fmt.Println("\nFrom the list above, which app's databases would you like to sync?")
 	appName, _, _ := reader.ReadLine()
 	fmt.Println()
 	if i, err := strconv.Atoi(string(appName)); err == nil {
@@ -241,7 +252,6 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []CloudantAccount) 
 		body := "name=" + account.username + "&password=" + account.password
 		headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.cookie}
 		resp, _ := makeRequest(httpClient, "POST", url, body, headers)
-		//printResponse(resp)
 		resp.Body.Close()
 	}
 }
@@ -250,43 +260,26 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []CloudantAccount) 
 *	Cycles through all endpoints and retrieves the Cloudant
 *	credentials for the specified app in each region.
  */
-func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Client, appName string, password string, org string) ([]CloudantAccount, error) {
+func getCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Client, appName string, password string) ([]CloudantAccount, error) {
 	cloudantAccounts := make([]CloudantAccount, len(ENDPOINTS))
 	username, _ := cliConnection.Username()
+	currOrg, _ := cliConnection.GetCurrentOrg()
+	org := currOrg.Name
 	startingEndpoint, _ := cliConnection.ApiEndpoint()
-	skipFirst := startingEndpoint == ENDPOINTS[0]
 	fmt.Println("\nRetrieving cookies for Cloudant authentication\n")
 	for i := 0; i < len(ENDPOINTS); i++ {
-		if !skipFirst || i != 0 {
-			cliConnection.CliCommandWithoutTerminalOutput("api", ENDPOINTS[i])
-			if password != "" {
-				if org != "" {
-					cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
-				} else {
-					cliConnection.CliCommand("login", "-u", username, "-p", password)
-				}
-			} else {
-				cliConnection.CliCommand("login", "-u", username, "-o", org)
-			}
-		}
+		cliConnection.CliCommandWithoutTerminalOutput("api", ENDPOINTS[i])
+		cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
 		account, err := getAccount(cliConnection, appName)
 		if err != nil {
-			fmt.Println("Make sure that you are giving an app that exists IN ALL REGIONS and try again")
 			return cloudantAccounts, err
 		}
 		account.cookie = getCookie(account, httpClient)
 		cloudantAccounts[i] = account
 	}
+	fmt.Println("\nReturning you to your original api endpoint.\nTo avoid all of these manual logins, consider using the -p option.\n")
 	cliConnection.CliCommandWithoutTerminalOutput("api", startingEndpoint) //point back to where the user started
-	if password != "" {
-		if org != "" {
-			cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
-		} else {
-			cliConnection.CliCommand("login", "-u", username, "-p", password)
-		}
-	} else {
-		cliConnection.CliCommand("login", "-u", username, "-o", org)
-	}
+	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
 	return cloudantAccounts, nil
 }
 
@@ -298,7 +291,7 @@ func getAccount(cliConnection plugin.CliConnection, appName string) (CloudantAcc
 	var account CloudantAccount
 	env, err := cliConnection.CliCommandWithoutTerminalOutput("env", appName)
 	if err != nil {
-		return account, err
+		return account, errors.New("Make sure that you are giving an app that exists IN ALL REGIONS and try again")
 	}
 	for i := 0; i < len(env); i++ {
 		if strings.Index(env[i], "cloudantNoSQLDB") != -1 {
@@ -311,6 +304,9 @@ func getAccount(cliConnection plugin.CliConnection, appName string) (CloudantAcc
 			break
 		}
 	}
+	if account.username == "" || account.password == "" || account.url == "" {
+		return account, errors.New("\nProblem finding Cloudant credentials for app. Make sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\n")
+	}
 	return account, nil
 }
 
@@ -322,12 +318,8 @@ func getCookie(account CloudantAccount, httpClient *http.Client) string {
 	url := "http://" + account.username + ".cloudant.com/_session"
 	body := "name=" + account.username + "&password=" + account.password
 	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
-	//req, _ := http.NewRequest("POST", url, bytes.NewBufferString(reqBody))
-	//req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	//resp, _ := httpClient.Do(req)
 	resp, _ := makeRequest(httpClient, "POST", url, body, headers)
 	cookie := resp.Header.Get("Set-Cookie")
-	//printResponse(resp)
 	resp.Body.Close()
 	return cookie
 }
