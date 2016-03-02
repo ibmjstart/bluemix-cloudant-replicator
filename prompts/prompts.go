@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-sync/CloudantAccountModel"
@@ -28,7 +29,7 @@ func makeRequest(httpClient *http.Client, rType string, url string, body string,
 }
 
 func GetPassword() string {
-	fmt.Print("\nYour password is necessary in order for bluemix-cloudant-sync to login across multiple regions.\n")
+	fmt.Print("\nBluemix password to log in across multiple regions.\n")
 	fmt.Print("\nPassword: ")
 	pw, _ := terminal.ReadPassword(0)
 	fmt.Println("\n")
@@ -91,11 +92,14 @@ func getAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []str
 /*
 *	Lists all current apps and prompts user to select one
  */
-func GetAppName(cliConnection plugin.CliConnection) string {
+func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 	reader := bufio.NewReader(os.Stdin)
 	apps_list, _ := cliConnection.GetApps()
 	currEndpoint, _ := cliConnection.ApiEndpoint()
-	currOrg, _ := cliConnection.GetCurrentOrg()
+	currOrg, err := cliConnection.GetCurrentOrg()
+	if err != nil || currOrg.Name == "" {
+		return "", errors.New("Difficulty pinpointing current org. Please log in again and point to the desired org.")
+	}
 	if len(apps_list) > 0 {
 		fmt.Println("\nThese are all existing apps in the org '" + currOrg.Name + "' and at '" + currEndpoint + "':\n")
 		for i := 0; i < len(apps_list); i++ {
@@ -106,7 +110,7 @@ func GetAppName(cliConnection plugin.CliConnection) string {
 	appName, _, _ := reader.ReadLine()
 	fmt.Println()
 	if i, err := strconv.Atoi(string(appName)); err == nil {
-		return apps_list[i-1].Name
+		return apps_list[i-1].Name, nil
 	}
-	return string(appName)
+	return string(appName), nil
 }
