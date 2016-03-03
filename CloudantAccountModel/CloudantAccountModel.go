@@ -3,6 +3,7 @@ package cam
 import (
 	"errors"
 	"fmt"
+	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-sync/utils"
 	"net/http"
@@ -10,12 +11,6 @@ import (
 	"strings"
 	"time"
 )
-
-const GREEN = "\x1b[1;36m"
-const RED = "\x1b[1;31m"
-const NOCOLOR = "\x1b[0m"
-const YELLOW = "\x1b[1;33m"
-const CYAN = "\x1b[0;36m"
 
 type CloudantAccount struct {
 	Endpoint string
@@ -28,6 +23,10 @@ type CloudantAccount struct {
 type CreateAccountResponse struct {
 	account CloudantAccount
 	err     error
+}
+
+func init() {
+	terminal.InitColorSupport()
 }
 
 func createAccount(cliConnection plugin.CliConnection, httpClient *http.Client, env []string, endpoint string) CreateAccountResponse {
@@ -49,10 +48,14 @@ func GetCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 	username, _ := cliConnection.Username()
 	currOrg, _ := cliConnection.GetCurrentOrg()
 	org := currOrg.Name
+	currSpace, _ := cliConnection.GetCurrentSpace()
+	space := currSpace.Name
 	startingEndpoint, _ := cliConnection.ApiEndpoint()
 	ch := make(chan CreateAccountResponse)
 	for i := 0; i < len(ENDPOINTS); i++ {
-		env, _ := getAppEnv(cliConnection, username, password, org, ENDPOINTS[i], appname)
+		env, err := getAppEnv(cliConnection, username, password, org, ENDPOINTS[i], appname, space)
+		//TODO:Tell the user the existing apps and handle error
+		bcs_utils.CheckErrorFatal(err)
 		go func(cliConnection plugin.CliConnection, httpClient *http.Client, env []string, endpoint string) {
 			ch <- createAccount(cliConnection, httpClient, env, endpoint)
 		}(cliConnection, httpClient, env, ENDPOINTS[i])
@@ -60,7 +63,6 @@ func GetCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 	for {
 		select {
 		case r := <-ch:
-			fmt.Printf("\n" + r.account.Username + "\n")
 			if r.err != nil {
 				fmt.Println("with an error", r.err)
 			}
@@ -73,8 +75,8 @@ func GetCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 		}
 	}
 	close(ch)
-	cliConnection.CliCommandWithoutTerminalOutput("api", startingEndpoint) //point back to where the user started
-	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+	//TODO:Relogin no matter how it fails
+	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org, "-a", startingEndpoint, "-s", space) //point back to where the user started
 	return cloudantAccounts, nil
 }
 
@@ -100,10 +102,14 @@ func parseCreds(env []string) (CloudantAccount, error) {
 /*
 *	Returns the result of "cf env APP"
  */
-func getAppEnv(cliConnection plugin.CliConnection, username string, password string, org string, endpoint string, appname string) ([]string, error) {
-	fmt.Println("Retrieving CloudantNoSQLDB credentials for '" + CYAN + appname + NOCOLOR + "' in '" + GREEN + endpoint + NOCOLOR + "'\n")
-	cliConnection.CliCommandWithoutTerminalOutput("api", endpoint)
-	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org)
+func getAppEnv(cliConnection plugin.CliConnection, username string, password string, org string, endpoint string, appname string, space string) ([]string, error) {
+	fmt.Println("Retrieving CloudantNoSQLDB credentials for '" + terminal.ColorizeBold(appname, 36) + "' in '" + terminal.ColorizeBold(endpoint, 36) + "'\n")
+	_, err := cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org, "-a", endpoint, "-s", space)
+	if err != nil {
+		fmt.Println("Unable to log in to org " + terminal.ColorizeBold(org, 36) + " and/or space " + terminal.ColorizeBold(space, 36))
+	}
+	_, err = cliConnection.CliCommand("login", "-u", username, "-p", password, "-a", endpoint)
+	bcs_utils.CheckErrorFatal(err)
 	return cliConnection.CliCommandWithoutTerminalOutput("env", appname)
 }
 

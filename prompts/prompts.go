@@ -2,12 +2,13 @@ package bcs_prompts
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	cf_terminal "github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-sync/CloudantAccountModel"
+	"github.com/ibmjstart/bluemix-cloudant-sync/utils"
 	"golang.org/x/crypto/ssh/terminal"
 	"io/ioutil"
 	"net/http"
@@ -16,21 +17,13 @@ import (
 	"strings"
 )
 
-/*
-* 	Creates a new http request based on the params and sends it, returning the response.
- */
-func makeRequest(httpClient *http.Client, rType string, url string, body string, headers map[string]string) (*http.Response, error) {
-	req, _ := http.NewRequest(rType, url, bytes.NewBufferString(body))
-	for header, value := range headers {
-		req.Header.Set(header, value)
-	}
-	return httpClient.Do(req)
-
+func init() {
+	cf_terminal.InitColorSupport()
 }
 
 func GetPassword() string {
 	fmt.Print("\nBluemix password to log in across multiple regions.\n")
-	fmt.Print("\nPassword: ")
+	fmt.Print("\nPassword" + cf_terminal.ColorizeBold(">", 36))
 	pw, _ := terminal.ReadPassword(0)
 	fmt.Println("\n")
 	return string(pw)
@@ -40,31 +33,51 @@ func GetPassword() string {
 *	Lists all databases for a specified CloudantAccount and
 *	prompts the user to select one
  */
-func GetDatabase(httpClient *http.Client, account cam.CloudantAccount) []string {
+func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]string, error) {
 	reader := bufio.NewReader(os.Stdin)
-	dbs := getAllDatabases(httpClient, account)
+	all_dbs := getAllDatabases(httpClient, account)
 	fmt.Println("Current databases:\n")
-	for i := 0; i < len(dbs); i++ {
-		fmt.Println(strconv.Itoa(i+1) + ". " + dbs[i])
+	for i := 0; i < len(all_dbs); i++ {
+		fmt.Println(strconv.Itoa(i+1) + ". " + cf_terminal.ColorizeBold(all_dbs[i], 36))
 	}
-	fmt.Println(strconv.Itoa(len(dbs)+1) + ". sync all databases")
-	fmt.Println("\nWhich database would you like to sync?")
-	db, _, _ := reader.ReadLine()
-	selected_dbs := strings.Split(string(db), ",")
+	if len(all_dbs) > 1 {
+		fmt.Println(strconv.Itoa(len(all_dbs)+1) + ". sync all databases")
+	}
+	if len(all_dbs) == 0 {
+		return all_dbs, errors.New("No databases found for CloudantNoSQLDB service in '" + account.Endpoint + "'")
+	}
+	fmt.Print("\nWhich database would you like to sync?" + cf_terminal.ColorizeBold(">", 36))
+	d, _, _ := reader.ReadLine()
+	selected_dbs := strings.Split(string(d), ",")
 	fmt.Println()
-	var d []string
+	var dbs []string
 	for i := 0; i < len(selected_dbs); i++ {
 		if j, err := strconv.Atoi(selected_dbs[i]); err == nil {
-			if j <= len(dbs) {
-				d = append(d, dbs[j-1])
-			} else if j == len(dbs)+1 {
-				return dbs
+			if j <= len(all_dbs) && j > 0 {
+				dbs = append(dbs, all_dbs[j-1])
+			} else if j == len(all_dbs)+1 && len(all_dbs) > 1 {
+				return all_dbs, nil
+			} else {
+				return all_dbs, errors.New("Index out of range")
 			}
 		} else {
-			d = append(d, selected_dbs[i])
+			if isValid(selected_dbs[i], all_dbs) {
+				dbs = append(dbs, selected_dbs[i])
+			} else {
+				return all_dbs, errors.New(selected_dbs[i] + " is not a valid database")
+			}
 		}
 	}
-	return d
+	return dbs, nil
+}
+
+func isValid(el string, elements []string) bool {
+	for i := 0; i < len(elements); i++ {
+		if el == elements[i] {
+			return true
+		}
+	}
+	return false
 }
 
 /*
@@ -74,7 +87,7 @@ func GetDatabase(httpClient *http.Client, account cam.CloudantAccount) []string 
 func getAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
 	url := "http://" + account.Username + ".cloudant.com/_all_dbs"
 	headers := map[string]string{"Cookie": account.Cookie}
-	resp, _ := makeRequest(httpClient, "GET", url, "", headers)
+	resp, _ := bcs_utils.MakeRequest(httpClient, "GET", url, "", headers)
 	respBody, _ := ioutil.ReadAll(resp.Body)
 	dbsStr := string(respBody)
 	var dbs []string
@@ -94,23 +107,34 @@ func getAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []str
  */
 func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 	reader := bufio.NewReader(os.Stdin)
-	apps_list, _ := cliConnection.GetApps()
+	apps, _ := cliConnection.GetApps()
+	var apps_list []string
+	for i := 0; i < len(apps); i++ {
+		apps_list = append(apps_list, apps[i].Name)
+	}
 	currEndpoint, _ := cliConnection.ApiEndpoint()
 	currOrg, err := cliConnection.GetCurrentOrg()
 	if err != nil || currOrg.Name == "" {
 		return "", errors.New("Difficulty pinpointing current org. Please log in again and point to the desired org.")
 	}
 	if len(apps_list) > 0 {
-		fmt.Println("\nThese are all existing apps in the org '" + currOrg.Name + "' and at '" + currEndpoint + "':\n")
+		fmt.Println("\nAll existing apps in org '" + cf_terminal.ColorizeBold(currOrg.Name, 36) + "' at '" + cf_terminal.ColorizeBold(currEndpoint, 36) + "':\n")
 		for i := 0; i < len(apps_list); i++ {
-			fmt.Println(strconv.Itoa(i+1) + ". " + apps_list[i].Name)
+			fmt.Println(strconv.Itoa(i+1) + ". " + cf_terminal.ColorizeBold(apps_list[i], 36))
 		}
 	}
-	fmt.Println("\nFrom the list above, which app's databases would you like to sync?")
+	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + cf_terminal.ColorizeBold(">", 36))
 	appName, _, _ := reader.ReadLine()
 	fmt.Println()
 	if i, err := strconv.Atoi(string(appName)); err == nil {
-		return apps_list[i-1].Name, nil
+		if i <= len(apps_list) && i > 0 {
+			return apps_list[i-1], nil
+		} else {
+			return "", errors.New("Index out of range")
+		}
+	}
+	if !isValid(string(appName), apps_list) {
+		return "", errors.New(string(appName) + " is not a valid app")
 	}
 	return string(appName), nil
 }

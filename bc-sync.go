@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-sync/CloudantAccountModel"
 	"github.com/ibmjstart/bluemix-cloudant-sync/prompts"
@@ -11,16 +12,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
-	"time"
 )
 
-var ENDPOINTS = []string{"https://api.ng.bluemix.net", "https://api.au-syd.bluemix.net", "https://api.eu-gb.bluemix.net"}
-
-const GREEN = "\x1b[1;36m"
-const RED = "\x1b[1;31m"
-const NOCOLOR = "\x1b[0m"
-const YELLOW = "\x1b[1;33m"
-const CYAN = "\x1b[0;36m"
+var ENDPOINTS = []string{"https://api.ng.bluemix.net",
+	"https://api.au-syd.bluemix.net",
+	"https://api.eu-gb.bluemix.net"}
 
 /*
 *	This is the struct implementing the interface defined by the core CLI. It can
@@ -28,13 +24,6 @@ const CYAN = "\x1b[0;36m"
 *
  */
 type BCSyncPlugin struct{}
-
-type HttpResponse struct {
-	requestType string
-	status      string
-	body        string
-	err         error
-}
 
 /*
 *	This function must be implemented by any plugin because it is part of the
@@ -52,15 +41,15 @@ type HttpResponse struct {
  */
 func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 	if args[0] == "sync-app-dbs" {
+		terminal.InitColorSupport()
 		var appname, password string
 		var dbs []string
 		var err error
 		loggedIn, _ := cliConnection.IsLoggedIn()
 		if !loggedIn {
-			fmt.Println("\nPlease login first via '" + YELLOW + "cf login" + NOCOLOR + "'\n")
+			fmt.Println("\nPlease login first via '" + terminal.ColorizeBold("cf login", 33) + "'\n")
 			return
 		}
-		password = bcs_prompts.GetPassword()
 		for i := 1; i < len(args); i++ {
 			switch args[i] {
 			case "-a":
@@ -71,19 +60,19 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		}
 		if appname == "" {
 			appname, err = bcs_prompts.GetAppName(cliConnection)
+			bcs_utils.CheckErrorNonFatal(err)
 			if err != nil {
-				fmt.Println(err)
-				return
+				cliConnection.CliCommand("login")
+				appname, err = bcs_prompts.GetAppName(cliConnection)
 			}
 		}
+		password = bcs_prompts.GetPassword()
 		var httpClient = &http.Client{}
 		cloudantAccounts, err := cam.GetCloudantAccounts(cliConnection, httpClient, ENDPOINTS, appname, password)
+		bcs_utils.CheckErrorFatal(err)
 		if len(dbs) == 0 {
-			dbs = bcs_prompts.GetDatabase(httpClient, cloudantAccounts[0])
-		}
-		if err != nil {
-			fmt.Println(RED + err.Error() + NOCOLOR)
-			return
+			dbs, err = bcs_prompts.GetDatabases(httpClient, cloudantAccounts[0])
+			bcs_utils.CheckErrorFatal(err)
 		}
 		createReplicatorDatabases(httpClient, cloudantAccounts)
 		for i := 0; i < len(dbs); i++ {
@@ -100,18 +89,18 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 *	_replicator database.
  */
 func createReplicationDocuments(db string, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
-	fmt.Println("\nCreating replication documents for " + db + "\n")
-	responses := make(chan HttpResponse)
+	fmt.Println("\nCreating replication documents for " + terminal.ColorizeBold(db, 36) + "\n")
+	responses := make(chan bcs_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
 		url := "http://" + account.Username + ".cloudant.com/_replicator"
 		for j := 0; j < len(cloudantAccounts); j++ {
 			if i != j {
-				go func(httpClient *http.Client, account cam.CloudantAccount, source cam.CloudantAccount, db string) {
+				go func(httpClient *http.Client, target cam.CloudantAccount, source cam.CloudantAccount, db string) {
 					rep := make(map[string]interface{})
 					rep["_id"] = source.Username + "-" + db
 					rep["source"] = source.Url + "/" + db
-					rep["target"] = account.Url + "/" + db
+					rep["target"] = target.Url + "/" + db
 					rep["create-target"] = false
 					rep["continuous"] = true
 					bd, _ := json.MarshalIndent(rep, " ", "  ")
@@ -121,31 +110,16 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 					defer resp.Body.Close()
 					respBody, _ := ioutil.ReadAll(resp.Body)
 					if resp.Status != "409 Conflict" && resp.Status != "201 Created" {
-						responses <- HttpResponse{requestType: "POST", status: resp.Status, body: string(respBody), err: errors.New("Trouble creating " + rep["_id"].(string) + " for '" + account.Endpoint + "'")}
+						responses <- bcs_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody),
+							Err: errors.New("Trouble creating " + rep["_id"].(string) + " for '" + account.Endpoint + "'")}
 					} else {
-						responses <- HttpResponse{requestType: "POST", status: resp.Status, body: string(respBody), err: err}
+						responses <- bcs_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody), Err: err}
 					}
 				}(httpClient, account, cloudantAccounts[j], db)
 			}
 		}
 	}
-	var resp []HttpResponse
-	//waiting on requests to return
-	for {
-		select {
-		case r := <-responses:
-			if r.err != nil {
-				fmt.Println(r.err)
-				fmt.Println("Request status: " + r.status)
-			}
-			resp = append(resp, r)
-		case <-time.After(50 * time.Millisecond):
-			continue
-		}
-		if len(cloudantAccounts)*(len(cloudantAccounts)-1) == len(resp) {
-			break
-		}
-	}
+	bcs_utils.CheckHttpResponses(responses, len(cloudantAccounts)*(len(cloudantAccounts)-1))
 	close(responses)
 }
 
@@ -155,7 +129,7 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
  */
 func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
 	fmt.Println("\nCreating replicator databases\n")
-	responses := make(chan HttpResponse)
+	responses := make(chan bcs_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		go func(httpClient *http.Client, account cam.CloudantAccount) {
 			url := "http://" + account.Username + ".cloudant.com/_replicator"
@@ -164,42 +138,27 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.C
 			defer resp.Body.Close()
 			respBody, _ := ioutil.ReadAll(resp.Body)
 			if resp.Status != "201 Created" && resp.Status != "412 Precondition Failed" {
-				responses <- HttpResponse{requestType: "PUT", status: resp.Status, body: string(respBody), err: errors.New(account.Endpoint + " replicator database status unknown")}
+				responses <- bcs_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody),
+					Err: errors.New(account.Endpoint + " replicator database status unknown")}
 			} else {
-				responses <- HttpResponse{requestType: "PUT", status: resp.Status, body: string(respBody), err: err}
+				responses <- bcs_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody), Err: err}
 			}
 		}(httpClient, cloudantAccounts[i])
 	}
-	var resp []HttpResponse
-	//waiting on requests to return
-	for {
-		select {
-		case r := <-responses:
-			if r.err != nil {
-				fmt.Println(r.err)
-				fmt.Println("Request status: " + r.status)
-			}
-			resp = append(resp, r)
-		case <-time.After(50 * time.Millisecond):
-			continue
-		}
-		if len(cloudantAccounts) == len(resp) {
-			break
-		}
-	}
+	bcs_utils.CheckHttpResponses(responses, len(cloudantAccounts))
 	close(responses)
 }
 
-func getPermissions(db string, httpClient *http.Client, account cam.CloudantAccount) HttpResponse {
+func getPermissions(db string, httpClient *http.Client, account cam.CloudantAccount) bcs_utils.HttpResponse {
 	url := "http://" + account.Username + ".cloudant.com/_api/v2/db/" + db + "/_security"
 	headers := map[string]string{"Cookie": account.Cookie}
 	resp, err := bcs_utils.MakeRequest(httpClient, "GET", url, "", headers)
 	defer resp.Body.Close()
 	respBody, _ := ioutil.ReadAll(resp.Body)
-	return HttpResponse{requestType: "GET", status: resp.Status, body: string(respBody), err: err}
+	return bcs_utils.HttpResponse{RequestType: "GET", Status: resp.Status, Body: string(respBody), Err: err}
 }
 
-func modifyPermissions(perms string, db string, httpClient *http.Client, account cam.CloudantAccount, cloudantAccounts []cam.CloudantAccount) HttpResponse {
+func modifyPermissions(perms string, db string, httpClient *http.Client, account cam.CloudantAccount, cloudantAccounts []cam.CloudantAccount) bcs_utils.HttpResponse {
 	var parsed map[string]interface{}
 	json.Unmarshal([]byte(perms), &parsed)
 	for i := 0; i < len(cloudantAccounts); i++ {
@@ -240,7 +199,7 @@ func modifyPermissions(perms string, db string, httpClient *http.Client, account
 	resp, err := bcs_utils.MakeRequest(httpClient, "PUT", url, body, headers)
 	defer resp.Body.Close()
 	respBody, _ := ioutil.ReadAll(resp.Body)
-	return HttpResponse{requestType: "PUT", status: resp.Status, body: string(respBody), err: err}
+	return bcs_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody), Err: err}
 }
 
 /*
@@ -249,38 +208,23 @@ func modifyPermissions(perms string, db string, httpClient *http.Client, account
 *	permissions for every other database
  */
 func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
-	fmt.Println("\nModifying database permissions for " + db + "\n")
-	responses := make(chan HttpResponse)
+	fmt.Println("\nModifying database permissions for '" + terminal.ColorizeBold(db, 36) + "'\n")
+	responses := make(chan bcs_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		go func(db string, httpClient *http.Client, account cam.CloudantAccount, cloudantAccounts []cam.CloudantAccount) {
 			r := getPermissions(db, httpClient, account)
-			if r.status == "200 OK" && r.err == nil {
+			if r.Status == "200 OK" && r.Err == nil {
 				responses <- r
-				responses <- modifyPermissions(r.body, db, httpClient, account, cloudantAccounts)
+				responses <- modifyPermissions(r.Body, db, httpClient, account, cloudantAccounts)
 			} else {
-				r.err = errors.New("Permissions GET request failed for '" + account.Endpoint + "'")
+				r.Err = errors.New("Permissions GET request failed for '" + account.Endpoint + "'")
 				responses <- r
-				responses <- HttpResponse{requestType: "PUT", status: "", body: "", err: errors.New("Did not execute for '" + account.Endpoint + "' due to GET failure")}
+				responses <- bcs_utils.HttpResponse{RequestType: "PUT", Status: "", Body: "",
+					Err: errors.New("Did not execute for '" + account.Endpoint + "' due to GET failure")}
 			}
 		}(db, httpClient, cloudantAccounts[i], cloudantAccounts)
 	}
-	var resp []HttpResponse
-	//waiting on requests to return
-	for {
-		select {
-		case r := <-responses:
-			fmt.Println(r.requestType, r.status)
-			if r.err != nil {
-				fmt.Println("with an error", r.err)
-			}
-			resp = append(resp, r)
-		case <-time.After(50 * time.Millisecond):
-			continue
-		}
-		if len(cloudantAccounts)*2 == len(resp) {
-			break
-		}
-	}
+	bcs_utils.CheckHttpResponses(responses, len(cloudantAccounts)*2)
 	close(responses)
 }
 
@@ -289,14 +233,23 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.C
  */
 func deleteCookies(httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
 	fmt.Println("\nDeleting Cookies\n")
+	responses := make(chan bcs_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
-		account := cloudantAccounts[i]
-		url := "http://" + account.Username + ".cloudant.com/_session"
-		body := "name=" + account.Username + "&password=" + account.Password
-		headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.Cookie}
-		resp, _ := bcs_utils.MakeRequest(httpClient, "POST", url, body, headers)
-		resp.Body.Close()
+		go func(httpClient *http.Client, account cam.CloudantAccount) {
+			url := "http://" + account.Username + ".cloudant.com/_session"
+			body := "name=" + account.Username + "&password=" + account.Password
+			headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.Cookie}
+			r, err := bcs_utils.MakeRequest(httpClient, "POST", url, body, headers)
+			defer r.Body.Close()
+			if r.Status != "200 OK" || err != nil {
+				err = errors.New("Failed to retrieve cookie for '" + account.Endpoint + "'")
+			}
+			respBody, _ := ioutil.ReadAll(r.Body)
+			responses <- bcs_utils.HttpResponse{RequestType: "POST", Status: r.Status, Body: string(respBody), Err: err}
+		}(httpClient, cloudantAccounts[i])
 	}
+	bcs_utils.CheckHttpResponses(responses, len(cloudantAccounts))
+	close(responses)
 }
 
 /*
