@@ -23,7 +23,7 @@ var ENDPOINTS = []string{"https://api.ng.bluemix.net",
 *	be found at  "github.com/cloudfoundry/cli/plugin/plugin.go"
 *
  */
-type BCSyncPlugin struct{}
+type BCReplicatorPlugin struct{}
 
 /*
 *	This function must be implemented by any plugin because it is part of the
@@ -39,7 +39,7 @@ type BCSyncPlugin struct{}
 *	user facing errors). The CLI will exit 0 if the plugin exits 0 and will exit
 *	1 should the plugin exits nonzero.
  */
-func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
+func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 	if args[0] == "cloudant-replicate" {
 		terminal.InitColorSupport()
 		var appname, password string
@@ -47,6 +47,7 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		var err error
 		loggedIn, _ := cliConnection.IsLoggedIn()
 		if !loggedIn || err != nil {
+			fmt.Println("Please log in first\n")
 			cliConnection.CliCommand("login")
 		}
 		for i := 1; i < len(args); i++ {
@@ -70,7 +71,7 @@ func (c *BCSyncPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		} else {
 			apps, _ := bcr_utils.GetAllApps(cliConnection)
 			if !bcr_utils.IsValid(appname, apps) {
-				bcr_utils.CheckErrorFatal(errors.New(appname + " is not a valid app"))
+				bcr_utils.CheckErrorFatal(errors.New(appname + " is not a valid app at at your current target.\n"))
 			}
 		}
 		if password == "" {
@@ -112,7 +113,7 @@ func finalLogin(cliConnection plugin.CliConnection, endpoint string, username st
 *	_replicator database.
  */
 func createReplicationDocuments(db string, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
-	fmt.Println("\nCreating replication documents for " + terminal.ColorizeBold(db, 36) + "\n")
+	fmt.Println("\nCreating replication documents for '" + terminal.ColorizeBold(db, 36) + "'\n")
 	responses := make(chan bcr_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
@@ -299,9 +300,9 @@ func printResponse(resp *http.Response) {
 *	second field, HelpText, is used by the core CLI to display help information
 *	to the user in the core commands `cf help`, `cf`, or `cf -h`.
  */
-func (c *BCSyncPlugin) GetMetadata() plugin.PluginMetadata {
+func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 	return plugin.PluginMetadata{
-		Name: "bluemix-cloudant-sync",
+		Name: "bluemix-cloudant-replicator",
 		Version: plugin.VersionType{
 			Major: 1,
 			Minor: 0,
@@ -346,7 +347,7 @@ func main() {
 	// Note: The plugin's main() method is invoked at install time to collect
 	// metadata. The plugin will exit 0 and the Run([]string) method will not be
 	// invoked.
-	plugin.Start(new(BCSyncPlugin))
+	plugin.Start(new(BCReplicatorPlugin))
 	// Plugin code should be written in the Run([]string) method,
 	// ensuring the plugin environment is bootstrapped.
 }

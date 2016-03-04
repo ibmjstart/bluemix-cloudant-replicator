@@ -67,7 +67,7 @@ func CheckHttpResponses(responses chan HttpResponse, numCalls int) {
 
 func CheckErrorNonFatal(err error) bool {
 	if err != nil {
-		fmt.Println(terminal.ColorizeBold("FAILED", 31))
+		fmt.Println(terminal.ColorizeBold("\nFAILED", 31))
 		fmt.Println(err.Error())
 		return true
 	}
@@ -76,7 +76,7 @@ func CheckErrorNonFatal(err error) bool {
 
 func CheckErrorFatal(err error) {
 	if err != nil {
-		fmt.Println(terminal.ColorizeBold("FAILED", 31))
+		fmt.Println(terminal.ColorizeBold("\nFAILED", 31))
 		fmt.Println(err.Error())
 		panic(err.Error())
 	}

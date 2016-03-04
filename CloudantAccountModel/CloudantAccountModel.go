@@ -32,6 +32,8 @@ func init() {
 func createAccount(cliConnection plugin.CliConnection, httpClient *http.Client, env []string, endpoint string) CreateAccountResponse {
 	account, err := parseCreds(env)
 	if err != nil {
+		err = errors.New("Problem finding Cloudant credentials for app at '" + terminal.ColorizeBold(endpoint, 36) +
+			"'.\nMake sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\n")
 		return CreateAccountResponse{account: account, err: err}
 	}
 	account.Endpoint = endpoint
@@ -88,7 +90,7 @@ func parseCreds(env []string) (CloudantAccount, error) {
 		}
 	}
 	if account.Username == "" || account.Password == "" || account.Url == "" {
-		return account, errors.New("Problem finding Cloudant credentials for app. Make sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\n")
+		return account, errors.New("Cloudant credentials incomplete\n")
 	}
 	return account, nil
 }

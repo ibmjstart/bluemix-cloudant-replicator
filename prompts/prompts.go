@@ -111,7 +111,7 @@ func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 		}
 	} else {
 		return "", errors.New("No apps found in org '" + cf_terminal.ColorizeBold(currOrg.Name, 36) + "' at '" +
-			cf_terminal.ColorizeBold(currEndpoint, 36) + "'. Please log in and point to an org with available apps.\n")
+			cf_terminal.ColorizeBold(currEndpoint, 36) + "'.\nPlease log in and point to an org with available apps.\n")
 	}
 	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + cf_terminal.ColorizeBold(">", 36))
 	appName, _, _ := reader.ReadLine()
