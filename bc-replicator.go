@@ -89,7 +89,8 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 			all_dbs := bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])
 			for i := 0; i < len(dbs); i++ {
 				if !bcr_utils.IsValid(dbs[i], all_dbs) {
-					bcr_utils.CheckErrorFatal(errors.New(dbs[i] + " is not a valid database in '" + cloudantAccounts[0].Endpoint + "'"))
+					bcr_utils.CheckErrorFatal(errors.New(dbs[i] + " is not a valid database in '" +
+						terminal.ColorizeBold(cloudantAccounts[0].Endpoint, 36) + "'"))
 				}
 			}
 		}
@@ -99,6 +100,30 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 			createReplicationDocuments(dbs[i], httpClient, cloudantAccounts)
 		}
 		deleteCookies(httpClient, cloudantAccounts)
+		finalSummary(appname, cloudantAccounts)
+	}
+}
+
+func finalSummary(appname string, cloudantAccounts []cam.CloudantAccount) {
+	fmt.Println(terminal.ColorizeBold("\nSUMMARY", 35))
+	fmt.Println("\nA Cloudant service was found for '" + terminal.ColorizeBold(appname, 36) +
+		"' and replication was attempted in the following regions:\n")
+	for i := 0; i < len(cloudantAccounts); i++ {
+		fmt.Println(terminal.ColorizeBold(cloudantAccounts[i].Endpoint, 36))
+	}
+	if len(cloudantAccounts) != len(ENDPOINTS) {
+		fmt.Println("\nFailed regions:\n")
+		for i := 0; i < len(ENDPOINTS); i++ {
+			succeeded := false
+			for j := 0; j < len(cloudantAccounts); j++ {
+				if ENDPOINTS[i] == cloudantAccounts[j].Endpoint {
+					succeeded = true
+				}
+			}
+			if !succeeded {
+				fmt.Println(terminal.ColorizeBold(ENDPOINTS[i], 36))
+			}
+		}
 	}
 }
 

@@ -33,7 +33,7 @@ func createAccount(cliConnection plugin.CliConnection, httpClient *http.Client, 
 	account, err := parseCreds(env)
 	if err != nil {
 		err = errors.New("Problem finding Cloudant credentials for app at '" + terminal.ColorizeBold(endpoint, 36) +
-			"'.\nMake sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\n")
+			"'.\nMake sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\nContinuing on with other regions.\n")
 		return CreateAccountResponse{account: account, err: err}
 	}
 	account.Endpoint = endpoint
@@ -51,10 +51,13 @@ func GetCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Cl
 	ch := make(chan CreateAccountResponse)
 	for i := 0; i < len(ENDPOINTS); i++ {
 		env, err := getAppEnv(cliConnection, username, password, org, ENDPOINTS[i], appname, space)
-		bcr_utils.CheckErrorNonFatal(err)
-		go func(cliConnection plugin.CliConnection, httpClient *http.Client, env []string, endpoint string) {
-			ch <- createAccount(cliConnection, httpClient, env, endpoint)
-		}(cliConnection, httpClient, env, ENDPOINTS[i])
+		go func(cliConnection plugin.CliConnection, httpClient *http.Client, env []string, endpoint string, envErr error) {
+			if envErr == nil {
+				ch <- createAccount(cliConnection, httpClient, env, endpoint)
+			} else {
+				ch <- CreateAccountResponse{account: CloudantAccount{}, err: err}
+			}
+		}(cliConnection, httpClient, env, ENDPOINTS[i], err)
 	}
 	responses := 0
 	for {
@@ -111,8 +114,8 @@ func getAppEnv(cliConnection plugin.CliConnection, username string, password str
 	}
 	output, err := cliConnection.CliCommandWithoutTerminalOutput("env", appname)
 	if err != nil {
-		return output, errors.New("Problems finding environment variables for '" + terminal.ColorizeBold(appname, 36) + "' in '" + terminal.ColorizeBold(endpoint, 36) +
-			"'.\nMake sure that the app exists in the location that failed and try again.\n")
+		return output, errors.New("No '" + terminal.ColorizeBold(appname, 36) + "' in '" + terminal.ColorizeBold(endpoint, 36) +
+			"'.\nContinuing on with other regions.\n")
 	}
 	return output, err
 }
