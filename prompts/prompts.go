@@ -1,4 +1,4 @@
-package bcs_prompts
+package bcr_prompts
 
 import (
 	"bufio"
@@ -30,12 +30,34 @@ func GetPassword() string {
 }
 
 /*
+*	Requests all databases for a given Cloudant account
+*	and returns them as a string array
+ */
+func GetAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
+	url := "http://" + account.Username + ".cloudant.com/_all_dbs"
+	headers := map[string]string{"Cookie": account.Cookie}
+	resp, _ := bcr_utils.MakeRequest(httpClient, "GET", url, "", headers)
+	respBody, _ := ioutil.ReadAll(resp.Body)
+	dbsStr := string(respBody)
+	var dbs []string
+	json.Unmarshal([]byte(dbsStr), &dbs)
+	resp.Body.Close()
+	var noRepDbs []string
+	for i := 0; i < len(dbs); i++ {
+		if dbs[i] != "_replicator" {
+			noRepDbs = append(noRepDbs, dbs[i])
+		}
+	}
+	return noRepDbs
+}
+
+/*
 *	Lists all databases for a specified CloudantAccount and
 *	prompts the user to select one
  */
 func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]string, error) {
 	reader := bufio.NewReader(os.Stdin)
-	all_dbs := getAllDatabases(httpClient, account)
+	all_dbs := GetAllDatabases(httpClient, account)
 	fmt.Println("Current databases:\n")
 	for i := 0; i < len(all_dbs); i++ {
 		fmt.Println(strconv.Itoa(i+1) + ". " + cf_terminal.ColorizeBold(all_dbs[i], 36))
@@ -61,7 +83,7 @@ func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]strin
 				return all_dbs, errors.New("Index out of range")
 			}
 		} else {
-			if isValid(selected_dbs[i], all_dbs) {
+			if bcr_utils.IsValid(selected_dbs[i], all_dbs) {
 				dbs = append(dbs, selected_dbs[i])
 			} else {
 				return all_dbs, errors.New(selected_dbs[i] + " is not a valid database")
@@ -71,49 +93,14 @@ func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]strin
 	return dbs, nil
 }
 
-func isValid(el string, elements []string) bool {
-	for i := 0; i < len(elements); i++ {
-		if el == elements[i] {
-			return true
-		}
-	}
-	return false
-}
-
-/*
-*	Requests all databases for a given Cloudant account
-*	and returns them as a string array
- */
-func getAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
-	url := "http://" + account.Username + ".cloudant.com/_all_dbs"
-	headers := map[string]string{"Cookie": account.Cookie}
-	resp, _ := bcs_utils.MakeRequest(httpClient, "GET", url, "", headers)
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	dbsStr := string(respBody)
-	var dbs []string
-	json.Unmarshal([]byte(dbsStr), &dbs)
-	resp.Body.Close()
-	var noRepDbs []string
-	for i := 0; i < len(dbs); i++ {
-		if dbs[i] != "_replicator" {
-			noRepDbs = append(noRepDbs, dbs[i])
-		}
-	}
-	return noRepDbs
-}
-
 /*
 *	Lists all current apps and prompts user to select one
  */
 func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 	reader := bufio.NewReader(os.Stdin)
-	apps, _ := cliConnection.GetApps()
-	var apps_list []string
-	for i := 0; i < len(apps); i++ {
-		apps_list = append(apps_list, apps[i].Name)
-	}
 	currEndpoint, _ := cliConnection.ApiEndpoint()
 	currOrg, err := cliConnection.GetCurrentOrg()
+	apps_list, _ := bcr_utils.GetAllApps(cliConnection)
 	if err != nil || currOrg.Name == "" {
 		return "", errors.New("Difficulty pinpointing current org. Please log in again and point to the desired org.")
 	}
@@ -122,6 +109,9 @@ func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 		for i := 0; i < len(apps_list); i++ {
 			fmt.Println(strconv.Itoa(i+1) + ". " + cf_terminal.ColorizeBold(apps_list[i], 36))
 		}
+	} else {
+		return "", errors.New("No apps found in org '" + cf_terminal.ColorizeBold(currOrg.Name, 36) + "' at '" +
+			cf_terminal.ColorizeBold(currEndpoint, 36) + "'. Please log in and point to an org with available apps.\n")
 	}
 	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + cf_terminal.ColorizeBold(">", 36))
 	appName, _, _ := reader.ReadLine()
@@ -133,7 +123,7 @@ func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 			return "", errors.New("Index out of range")
 		}
 	}
-	if !isValid(string(appName), apps_list) {
+	if !bcr_utils.IsValid(string(appName), apps_list) {
 		return "", errors.New(string(appName) + " is not a valid app")
 	}
 	return string(appName), nil

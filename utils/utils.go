@@ -1,10 +1,11 @@
-package bcs_utils
+package bcr_utils
 
 import (
 	"bytes"
 	"fmt"
 	"github.com/cloudfoundry/cli/cf/terminal"
-	"log"
+	"github.com/cloudfoundry/cli/plugin"
+	//"log"
 	"net/http"
 	"time"
 )
@@ -20,6 +21,16 @@ func init() {
 	terminal.InitColorSupport()
 }
 
+func GetCurrentTarget(cliConnection plugin.CliConnection) (string, string, string, string) {
+	endpoint, _ := cliConnection.ApiEndpoint()
+	username, _ := cliConnection.Username()
+	currOrg, _ := cliConnection.GetCurrentOrg()
+	org := currOrg.Name
+	currSpace, _ := cliConnection.GetCurrentSpace()
+	space := currSpace.Name
+	return endpoint, username, org, space
+}
+
 /*
 * 	Creates a new http request based on the params and sends it, returning the response.
  */
@@ -32,12 +43,17 @@ func MakeRequest(httpClient *http.Client, rType string, url string, body string,
 }
 
 func CheckHttpResponses(responses chan HttpResponse, numCalls int) {
+	if numCalls < 1 {
+		return
+	}
 	var resp []HttpResponse
 	for {
 		select {
 		case r := <-responses:
-			if r.Err != nil {
-				CheckErrorNonFatal(r.Err)
+			if CheckErrorNonFatal(r.Err) {
+				fmt.Println(r.RequestType)
+				fmt.Println(r.Status)
+				fmt.Println(r.Body)
 			}
 			resp = append(resp, r)
 		case <-time.After(50 * time.Millisecond):
@@ -49,18 +65,41 @@ func CheckHttpResponses(responses chan HttpResponse, numCalls int) {
 	}
 }
 
-func CheckErrorNonFatal(err error) {
+func CheckErrorNonFatal(err error) bool {
 	if err != nil {
 		fmt.Println(terminal.ColorizeBold("FAILED", 31))
 		fmt.Println(err.Error())
+		return true
 	}
+	return false
 }
 
 func CheckErrorFatal(err error) {
 	if err != nil {
 		fmt.Println(terminal.ColorizeBold("FAILED", 31))
 		fmt.Println(err.Error())
-		log.Fatal(err.Error())
+		panic(err.Error())
 	}
 
+}
+
+func IsValid(el string, elements []string) bool {
+	for i := 0; i < len(elements); i++ {
+		if el == elements[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func GetAllApps(cliConnection plugin.CliConnection) ([]string, error) {
+	var apps_list []string
+	apps, err := cliConnection.GetApps()
+	if err != nil {
+		return apps_list, err
+	}
+	for i := 0; i < len(apps); i++ {
+		apps_list = append(apps_list, apps[i].Name)
+	}
+	return apps_list, nil
 }

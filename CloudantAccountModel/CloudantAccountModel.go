@@ -45,38 +45,32 @@ func createAccount(cliConnection plugin.CliConnection, httpClient *http.Client, 
  */
 func GetCloudantAccounts(cliConnection plugin.CliConnection, httpClient *http.Client, ENDPOINTS []string, appname string, password string) ([]CloudantAccount, error) {
 	var cloudantAccounts []CloudantAccount
-	username, _ := cliConnection.Username()
-	currOrg, _ := cliConnection.GetCurrentOrg()
-	org := currOrg.Name
-	currSpace, _ := cliConnection.GetCurrentSpace()
-	space := currSpace.Name
-	startingEndpoint, _ := cliConnection.ApiEndpoint()
+	_, username, org, space := bcr_utils.GetCurrentTarget(cliConnection)
 	ch := make(chan CreateAccountResponse)
 	for i := 0; i < len(ENDPOINTS); i++ {
 		env, err := getAppEnv(cliConnection, username, password, org, ENDPOINTS[i], appname, space)
-		//TODO:Tell the user the existing apps and handle error
-		bcs_utils.CheckErrorFatal(err)
+		bcr_utils.CheckErrorNonFatal(err)
 		go func(cliConnection plugin.CliConnection, httpClient *http.Client, env []string, endpoint string) {
 			ch <- createAccount(cliConnection, httpClient, env, endpoint)
 		}(cliConnection, httpClient, env, ENDPOINTS[i])
 	}
+	responses := 0
 	for {
 		select {
 		case r := <-ch:
-			if r.err != nil {
-				fmt.Println("with an error", r.err)
+			responses += 1
+			bcr_utils.CheckErrorNonFatal(r.err)
+			if r.err == nil {
+				cloudantAccounts = append(cloudantAccounts, r.account)
 			}
-			cloudantAccounts = append(cloudantAccounts, r.account)
 		case <-time.After(50 * time.Millisecond):
 			continue
 		}
-		if len(cloudantAccounts) == len(ENDPOINTS) {
+		if responses == len(ENDPOINTS) {
 			break
 		}
 	}
 	close(ch)
-	//TODO:Relogin no matter how it fails
-	cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org, "-a", startingEndpoint, "-s", space) //point back to where the user started
 	return cloudantAccounts, nil
 }
 
@@ -94,7 +88,7 @@ func parseCreds(env []string) (CloudantAccount, error) {
 		}
 	}
 	if account.Username == "" || account.Password == "" || account.Url == "" {
-		return account, errors.New("\nProblem finding Cloudant credentials for app. Make sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\n")
+		return account, errors.New("Problem finding Cloudant credentials for app. Make sure that there is a valid 'cloudantNoSQLDB' service bound to your app.\n")
 	}
 	return account, nil
 }
@@ -104,13 +98,21 @@ func parseCreds(env []string) (CloudantAccount, error) {
  */
 func getAppEnv(cliConnection plugin.CliConnection, username string, password string, org string, endpoint string, appname string, space string) ([]string, error) {
 	fmt.Println("Retrieving CloudantNoSQLDB credentials for '" + terminal.ColorizeBold(appname, 36) + "' in '" + terminal.ColorizeBold(endpoint, 36) + "'\n")
-	_, err := cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org, "-a", endpoint, "-s", space)
-	if err != nil {
-		fmt.Println("Unable to log in to org " + terminal.ColorizeBold(org, 36) + " and/or space " + terminal.ColorizeBold(space, 36))
+	startingEndpoint, _ := cliConnection.ApiEndpoint()
+	if startingEndpoint != endpoint {
+		_, err := cliConnection.CliCommandWithoutTerminalOutput("login", "-u", username, "-p", password, "-o", org, "-a", endpoint, "-s", space)
+		if err != nil {
+			fmt.Println("Unable to log in to org '" + terminal.ColorizeBold(org, 36) + "' and/or space '" + terminal.ColorizeBold(space, 36) + "'\n")
+			_, err = cliConnection.CliCommand("login", "-u", username, "-p", password, "-a", endpoint)
+			bcr_utils.CheckErrorFatal(err)
+		}
 	}
-	_, err = cliConnection.CliCommand("login", "-u", username, "-p", password, "-a", endpoint)
-	bcs_utils.CheckErrorFatal(err)
-	return cliConnection.CliCommandWithoutTerminalOutput("env", appname)
+	output, err := cliConnection.CliCommandWithoutTerminalOutput("env", appname)
+	if err != nil {
+		return output, errors.New("Problems finding environment variables for '" + terminal.ColorizeBold(appname, 36) + "' in '" + terminal.ColorizeBold(endpoint, 36) +
+			"'.\nMake sure that the app exists in the location that failed and try again.\n")
+	}
+	return output, err
 }
 
 /*
@@ -121,7 +123,7 @@ func getCookie(account CloudantAccount, httpClient *http.Client) string {
 	url := "http://" + account.Username + ".cloudant.com/_session"
 	body := "name=" + account.Username + "&password=" + account.Password
 	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
-	resp, _ := bcs_utils.MakeRequest(httpClient, "POST", url, body, headers)
+	resp, _ := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
 	cookie := resp.Header.Get("Set-Cookie")
 	resp.Body.Close()
 	return cookie
