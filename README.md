@@ -31,8 +31,8 @@ If you call the command with no arguments, it will interactively prompt you to c
 #### Options
 
 1. The **-a** option allows you to pass in your app name directly
-2. The **-d** option allows you to pass in your database name(or comma separated list) directly
-3. The **-p** option allows you to pass in your password directly
+2. The **-d** option allows you to pass in a comma-delimited list of cloudant database names to replicate (not to be confused with the cloudant service instance names which it automatically infers from the application) 
+3. The **-p** option allows you to pass in your Bluemix password directly
 
 
 ##Notes and Assumptions
