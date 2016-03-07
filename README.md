@@ -26,7 +26,7 @@
 ```
 cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD]
 ```
-If you call the command with no arguments, it will interactively prompt you to choose your app and databases. The interactive mode of calling the command is much more forgiving. It attempts to guide you to your app in each region if necessary.
+If you call the command with no arguments, it will interactively prompt you to choose your app and databases from your current cf target. The interactive mode of calling the command is much more forgiving. It attempts to guide you to your app in each region if necessary.
 
 #### Options
 
