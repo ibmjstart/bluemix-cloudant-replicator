@@ -4,9 +4,10 @@
 
 ##Download Binaries
 
-###### Mac:     [64-bit](https://github.com/ibmjstart/bluemix-cloudant-sync/blob/master/binaries/darwin/amd64/bc-replicator?raw=true)   
-###### Windows: [64-bit](https://github.com/ibmjstart/bluemix-cloudant-sync/blob/master/binaries/windows/amd64/bc-replicator.exe?raw=true)    
-###### Linux:   [64-bit](https://github.com/ibmjstart/bluemix-cloudant-sync/blob/master/binaries/linux/amd64/bc-replicator?raw=true)
+
+###### Mac:     [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.0/bc-replicator_0.1.0_osx)   
+###### Windows: [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.0/bc-replicator_0.1.0_win64.exe)    
+###### Linux:   [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.0/bc-replicator_0.1.0_linux)
 
 
 ## Installation
