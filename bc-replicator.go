@@ -341,7 +341,7 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 		Commands: []plugin.Command{
 			plugin.Command{
 				Name:     "cloudant-replicate",
-				HelpText: "synchronizes Cloudant databases for multi-regional apps",
+				HelpText: "configures replication across Cloudant databases in multiple Bluemix regions",
 
 				// UsageDetails is optional
 				// It is used to show help of usage of each command
