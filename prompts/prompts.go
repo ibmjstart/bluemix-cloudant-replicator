@@ -106,7 +106,7 @@ func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 	currOrg, err := cliConnection.GetCurrentOrg()
 	apps_list, _ := bcr_utils.GetAllApps(cliConnection)
 	if err != nil || currOrg.Name == "" {
-		return "", errors.New("Difficulty pinpointing current org. Please log in again and point to the desired org.")
+		return "", errors.New("Difficulty pinpointing current org. Please log in again and point to the desired org.\n")
 	}
 	if len(apps_list) > 0 {
 		fmt.Println("\nAll existing apps in org '" + terminal.ColorizeBold(currOrg.Name, 36) + "' at '" + terminal.ColorizeBold(currEndpoint, 36) + "':\n")

@@ -266,10 +266,10 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.C
 				responses <- r
 				responses <- modifyPermissions(r.Body, db, httpClient, account, cloudantAccounts)
 			} else {
-				r.Err = errors.New("Permissions GET request failed for '" + account.Endpoint + "'")
+				r.Err = errors.New("Permissions GET request failed for '" + terminal.ColorizeBold(account.Endpoint, 36) + "'")
 				responses <- r
 				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: "Never Sent", Body: "",
-					Err: errors.New("Did not execute for '" + account.Endpoint + "' due to GET failure")}
+					Err: errors.New("Could not modify permission for '" + terminal.ColorizeBold(account.Endpoint, 36) + "' due to GET failure")}
 			}
 		}(db, httpClient, cloudantAccounts[i], cloudantAccounts)
 	}
