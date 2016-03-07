@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
-	"github.com/ibmjstart/bluemix-cloudant-sync/utils"
+	"github.com/ibmjstart/bluemix-cloudant-replicator/utils"
 	"net/http"
 	"regexp"
 	"strings"
