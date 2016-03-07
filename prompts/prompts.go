@@ -59,7 +59,8 @@ func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]strin
 	reader := bufio.NewReader(os.Stdin)
 	all_dbs := GetAllDatabases(httpClient, account)
 	if len(all_dbs) == 0 {
-		return all_dbs, errors.New("No databases found for CloudantNoSQLDB service in '" + account.Endpoint + "'")
+		return all_dbs, errors.New("No databases found for CloudantNoSQLDB service in '" +
+			cf_terminal.ColorizeBold(account.Endpoint, 36) + "'")
 	}
 	fmt.Println("Current databases:\n")
 	for i := 0; i < len(all_dbs); i++ {
