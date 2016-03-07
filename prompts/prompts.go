@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	cf_terminal "github.com/cloudfoundry/cli/cf/terminal"
+	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/CloudantAccountModel"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/utils"
-	"golang.org/x/crypto/ssh/terminal"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -18,13 +17,17 @@ import (
 )
 
 func init() {
-	cf_terminal.InitColorSupport()
+	terminal.InitColorSupport()
 }
 
 func GetPassword() string {
 	fmt.Print("\nBluemix password to log in across multiple regions.\n")
-	fmt.Print("\nPassword" + cf_terminal.ColorizeBold(">", 36))
-	pw, _ := terminal.ReadPassword(0)
+	reader := bufio.NewReader(os.Stdin)
+	bucket := &[]string{}
+	printer := terminal.NewTeePrinter()
+	printer.SetOutputBucket(bucket)
+	ui := terminal.NewUI(reader, printer)
+	pw := ui.AskForPassword("Password")
 	fmt.Println("\n")
 	return string(pw)
 }
@@ -60,16 +63,16 @@ func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]strin
 	all_dbs := GetAllDatabases(httpClient, account)
 	if len(all_dbs) == 0 {
 		return all_dbs, errors.New("No databases found for CloudantNoSQLDB service in '" +
-			cf_terminal.ColorizeBold(account.Endpoint, 36) + "'")
+			terminal.ColorizeBold(account.Endpoint, 36) + "'")
 	}
 	fmt.Println("Current databases:\n")
 	for i := 0; i < len(all_dbs); i++ {
-		fmt.Println(strconv.Itoa(i+1) + ". " + cf_terminal.ColorizeBold(all_dbs[i], 36))
+		fmt.Println(strconv.Itoa(i+1) + ". " + terminal.ColorizeBold(all_dbs[i], 36))
 	}
 	if len(all_dbs) > 1 {
 		fmt.Println(strconv.Itoa(len(all_dbs)+1) + ". sync all databases")
 	}
-	fmt.Print("\nWhich database would you like to sync?" + cf_terminal.ColorizeBold(">", 36))
+	fmt.Print("\nWhich database would you like to sync?" + terminal.ColorizeBold(">", 36))
 	d, _, _ := reader.ReadLine()
 	selected_dbs := strings.Split(string(d), ",")
 	fmt.Println()
@@ -106,15 +109,15 @@ func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 		return "", errors.New("Difficulty pinpointing current org. Please log in again and point to the desired org.")
 	}
 	if len(apps_list) > 0 {
-		fmt.Println("\nAll existing apps in org '" + cf_terminal.ColorizeBold(currOrg.Name, 36) + "' at '" + cf_terminal.ColorizeBold(currEndpoint, 36) + "':\n")
+		fmt.Println("\nAll existing apps in org '" + terminal.ColorizeBold(currOrg.Name, 36) + "' at '" + terminal.ColorizeBold(currEndpoint, 36) + "':\n")
 		for i := 0; i < len(apps_list); i++ {
-			fmt.Println(strconv.Itoa(i+1) + ". " + cf_terminal.ColorizeBold(apps_list[i], 36))
+			fmt.Println(strconv.Itoa(i+1) + ". " + terminal.ColorizeBold(apps_list[i], 36))
 		}
 	} else {
-		return "", errors.New("No apps found in org '" + cf_terminal.ColorizeBold(currOrg.Name, 36) + "' at '" +
-			cf_terminal.ColorizeBold(currEndpoint, 36) + "'.\nPlease log in and point to an org with available apps.\n")
+		return "", errors.New("No apps found in org '" + terminal.ColorizeBold(currOrg.Name, 36) + "' at '" +
+			terminal.ColorizeBold(currEndpoint, 36) + "'.\nPlease log in and point to an org with available apps.\n")
 	}
-	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + cf_terminal.ColorizeBold(">", 36))
+	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + terminal.ColorizeBold(">", 36))
 	appName, _, _ := reader.ReadLine()
 	fmt.Println()
 	if i, err := strconv.Atoi(string(appName)); err == nil {
