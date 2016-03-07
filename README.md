@@ -26,7 +26,7 @@
 ```
 cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD]
 ```
-If you call the command with no assumptions, it will interactively prompt you to choose your app, and databases. The interactive mode of calling the command is much more forgiving. It attempts to guide you to your app in each region if necessary.
+If you call the command with no arguments, it will interactively prompt you to choose your app and databases. The interactive mode of calling the command is much more forgiving. It attempts to guide you to your app in each region if necessary.
 
 #### Options
 
@@ -40,8 +40,9 @@ If you call the command with no assumptions, it will interactively prompt you to
 #### Assumptions
 
 1. The specified app exists in all regions
-2. The same org and space are used across regions (this is not a problem when using the interactive mode)
+2. The same org and space name are used across regions (this is not a problem when using the interactive mode)
 3. There is only one Cloudant service bound to the app (the first set of credentials will be used if not)
+4. Each Cloudant service has a database by the same name as the original
 
 #### Notes
 
