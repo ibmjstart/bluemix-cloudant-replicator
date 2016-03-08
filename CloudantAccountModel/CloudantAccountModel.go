@@ -125,7 +125,7 @@ func getAppEnv(cliConnection plugin.CliConnection, username string, password str
 *	used to authenticate all necessary api calls.
  */
 func getCookie(account CloudantAccount, httpClient *http.Client) string {
-	url := "http://" + account.Username + ".cloudant.com/_session"
+	url := "https://" + account.Username + ".cloudant.com/_session"
 	body := "name=" + account.Username + "&password=" + account.Password
 	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
 	resp, _ := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)

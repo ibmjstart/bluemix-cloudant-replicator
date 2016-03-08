@@ -37,7 +37,7 @@ func GetPassword() string {
 *	and returns them as a string array
  */
 func GetAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
-	url := "http://" + account.Username + ".cloudant.com/_all_dbs"
+	url := "https://" + account.Username + ".cloudant.com/_all_dbs"
 	headers := map[string]string{"Cookie": account.Cookie}
 	resp, _ := bcr_utils.MakeRequest(httpClient, "GET", url, "", headers)
 	respBody, _ := ioutil.ReadAll(resp.Body)
