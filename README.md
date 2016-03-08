@@ -21,6 +21,7 @@ A [cf cli](https://github.com/cloudfoundry/cli) plugin for configuring continuou
 cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD]
 ```
 The plugin will
+
 1. Use `PASSWORD` to log into each of the different Bluemix regions (using the org and space names of the current target)
 2. Retrieve the credentials from the Cloudant service instance bound to `APP` in each region
 3. Set up continuous replication between the database names passed via `DATABASE`
