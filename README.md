@@ -1,5 +1,5 @@
 # bluemix-cloudant-replicator
-### a cf cli plugin for configuring continuous replication between cloudant databases in multiple IBM Bluemix regions
+A [cf cli](https://github.com/cloudfoundry/cli) plugin for configuring continuous replication between Cloudant databases in multiple regions of [IBM Bluemix](http://bluemix.net)
 
 ## Installation
 1. download the appropriate binary
