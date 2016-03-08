@@ -142,7 +142,7 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 	responses := make(chan bcr_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		account := cloudantAccounts[i]
-		url := "http://" + account.Username + ".cloudant.com/_replicator"
+		url := "https://" + account.Username + ".cloudant.com/_replicator"
 		for j := 0; j < len(cloudantAccounts); j++ {
 			if i != j {
 				go func(httpClient *http.Client, target cam.CloudantAccount, source cam.CloudantAccount, db string) {
@@ -181,7 +181,7 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.C
 	responses := make(chan bcr_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		go func(httpClient *http.Client, account cam.CloudantAccount) {
-			url := "http://" + account.Username + ".cloudant.com/_replicator"
+			url := "https://" + account.Username + ".cloudant.com/_replicator"
 			headers := map[string]string{"Content-Type": "application/json", "Cookie": account.Cookie}
 			resp, err := bcr_utils.MakeRequest(httpClient, "PUT", url, "", headers)
 			defer resp.Body.Close()
@@ -199,7 +199,7 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.C
 }
 
 func getPermissions(db string, httpClient *http.Client, account cam.CloudantAccount) bcr_utils.HttpResponse {
-	url := "http://" + account.Username + ".cloudant.com/_api/v2/db/" + db + "/_security"
+	url := "https://" + account.Username + ".cloudant.com/_api/v2/db/" + db + "/_security"
 	headers := map[string]string{"Cookie": account.Cookie}
 	resp, err := bcr_utils.MakeRequest(httpClient, "GET", url, "", headers)
 	defer resp.Body.Close()
@@ -241,7 +241,7 @@ func modifyPermissions(perms string, db string, httpClient *http.Client, account
 			parsed["cloudant"] = map[string]interface{}(temp_parsed)
 		}
 	}
-	url := "http://" + account.Username + ".cloudant.com/_api/v2/db/" + db + "/_security"
+	url := "https://" + account.Username + ".cloudant.com/_api/v2/db/" + db + "/_security"
 	bd, _ := json.MarshalIndent(parsed, " ", "  ")
 	body := string(bd)
 	headers := map[string]string{"Content-Type": "application/json", "Cookie": account.Cookie}
@@ -285,7 +285,7 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []cam.CloudantAccou
 	responses := make(chan bcr_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
 		go func(httpClient *http.Client, account cam.CloudantAccount) {
-			url := "http://" + account.Username + ".cloudant.com/_session"
+			url := "https://" + account.Username + ".cloudant.com/_session"
 			body := "name=" + account.Username + "&password=" + account.Password
 			headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.Cookie}
 			r, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
