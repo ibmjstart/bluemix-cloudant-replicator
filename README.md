@@ -29,8 +29,7 @@ The plugin will
 If you call the command with no arguments, it will interactively prompt you to choose your app and databases from your current cf target. The interactive mode will guide you to your app in each region if necessary.
 
 Running the command will create pair-wise replications between the databases in each region, as shown in the image below.
-
-![resulting topology](https://github.com/ibmjstart/bluemix-cloudant-replicator/blob/master/README%20images/bluemix-cloudant-replicator_diagram_2.png)
+![resulting topology](https://github.com/ibmjstart/bluemix-cloudant-replicator/blob/master/README_images/bluemix-cloudant-replicator_diagram_2.png)
 
 ##Notes and Assumptions
 
