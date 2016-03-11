@@ -150,7 +150,7 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 					rep["_id"] = source.Username + "-" + db
 					rep["source"] = source.Url + "/" + db
 					rep["target"] = target.Url + "/" + db
-					rep["create-target"] = false
+					rep["create_target"] = false
 					rep["continuous"] = true
 					bd, _ := json.MarshalIndent(rep, " ", "  ")
 					body := string(bd)
