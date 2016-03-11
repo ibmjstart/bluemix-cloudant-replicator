@@ -85,6 +85,8 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 		if len(dbs) == 0 {
 			dbs, err = bcr_prompts.GetDatabases(httpClient, cloudantAccounts[0])
 			bcr_utils.CheckErrorFatal(err)
+		} else if len(dbs) == 1 && dbs[0] == "all" {
+			dbs = bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])
 		} else {
 			all_dbs := bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])
 			for i := 0; i < len(dbs); i++ {
