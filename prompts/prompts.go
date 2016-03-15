@@ -2,14 +2,12 @@ package bcr_prompts
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/CloudantAccountModel"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/utils"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -33,34 +31,12 @@ func GetPassword() string {
 }
 
 /*
-*	Requests all databases for a given Cloudant account
-*	and returns them as a string array
- */
-func GetAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
-	url := "https://" + account.Username + ".cloudant.com/_all_dbs"
-	headers := map[string]string{"Cookie": account.Cookie}
-	resp, _ := bcr_utils.MakeRequest(httpClient, "GET", url, "", headers)
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	dbsStr := string(respBody)
-	var dbs []string
-	json.Unmarshal([]byte(dbsStr), &dbs)
-	resp.Body.Close()
-	var noRepDbs []string
-	for i := 0; i < len(dbs); i++ {
-		if dbs[i] != "_replicator" {
-			noRepDbs = append(noRepDbs, dbs[i])
-		}
-	}
-	return noRepDbs
-}
-
-/*
 *	Lists all databases for a specified CloudantAccount and
 *	prompts the user to select one
  */
 func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]string, error) {
 	reader := bufio.NewReader(os.Stdin)
-	all_dbs := GetAllDatabases(httpClient, account)
+	all_dbs := bcr_utils.GetAllDatabases(httpClient, account)
 	if len(all_dbs) == 0 {
 		return all_dbs, errors.New("No databases found for CloudantNoSQLDB service in '" +
 			terminal.ColorizeBold(account.Endpoint, 36) + "'")

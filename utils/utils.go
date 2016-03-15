@@ -2,11 +2,15 @@ package bcr_utils
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
-	//"log"
+	"github.com/ibmjstart/bluemix-cloudant-replicator/CloudantAccountModel"
+	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -102,4 +106,56 @@ func GetAllApps(cliConnection plugin.CliConnection) ([]string, error) {
 		apps_list = append(apps_list, apps[i].Name)
 	}
 	return apps_list, nil
+}
+
+/*
+*	Requests all databases for a given Cloudant account
+*	and returns them as a string array
+ */
+func GetAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
+	url := "https://" + account.Username + ".cloudant.com/_all_dbs"
+	headers := map[string]string{"Cookie": account.Cookie}
+	resp, _ := MakeRequest(httpClient, "GET", url, "", headers)
+	respBody, _ := ioutil.ReadAll(resp.Body)
+	dbsStr := string(respBody)
+	var dbs []string
+	json.Unmarshal([]byte(dbsStr), &dbs)
+	resp.Body.Close()
+	var noRepDbs []string
+	for i := 0; i < len(dbs); i++ {
+		if dbs[i] != "_replicator" {
+			noRepDbs = append(noRepDbs, dbs[i])
+		}
+	}
+	return noRepDbs
+}
+
+func HandleFlags(args []string) (string, []string, string, bool) {
+	var appname, password string
+	var dbs []string
+	all_dbs := false
+	err := errors.New("Problem with command invocation. For help look to '" +
+		terminal.ColorizeBold("cf help cloudant-replicate", 33) + "'")
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "-a":
+			if i+1 >= len(args) {
+				CheckErrorFatal(err)
+			}
+			appname = args[i+1]
+		case "-d":
+			if i+1 >= len(args) {
+				CheckErrorFatal(err)
+			}
+			dbs = strings.Split(args[i+1], ",")
+		case "-p":
+			if i+1 >= len(args) {
+				CheckErrorFatal(err)
+			}
+			password = args[i+1]
+		case "--all-dbs":
+			all_dbs = true
+		}
+	}
+	return appname, dbs, password, all_dbs
 }

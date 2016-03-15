@@ -7,6 +7,7 @@ import (
 	"github.com/cloudfoundry/cli/cf/terminal"
 	"github.com/cloudfoundry/cli/plugin"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/CloudantAccountModel"
+	"github.com/ibmjstart/bluemix-cloudant-replicator/cloudantAccounts"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/prompts"
 	"github.com/ibmjstart/bluemix-cloudant-replicator/utils"
 	"io/ioutil"
@@ -43,27 +44,13 @@ type BCReplicatorPlugin struct{}
 func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 	if args[0] == "cloudant-replicate" {
 		terminal.InitColorSupport()
-		var appname, password string
-		var dbs []string
 		var err error
-		all_dbs := false
 		loggedIn, _ := cliConnection.IsLoggedIn()
 		if !loggedIn || err != nil {
 			fmt.Println("Please log in first\n")
 			cliConnection.CliCommand("login")
 		}
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "-a":
-				appname = args[i+1]
-			case "-d":
-				dbs = strings.Split(args[i+1], ",")
-			case "-p":
-				password = args[i+1]
-			case "--all-dbs":
-				all_dbs = true
-			}
-		}
+		appname, dbs, password, all_dbs := bcr_utils.HandleFlags(args)
 		if appname == "" {
 			appname, err = bcr_prompts.GetAppName(cliConnection)
 			bcr_utils.CheckErrorNonFatal(err)
@@ -84,17 +71,17 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 		startingEndpoint, username, startingOrg, startingSpace := bcr_utils.GetCurrentTarget(cliConnection)
 		defer finalLogin(cliConnection, startingEndpoint, username, password, startingOrg, startingSpace)
 		var httpClient = &http.Client{}
-		cloudantAccounts, err := cam.GetCloudantAccounts(cliConnection, httpClient, ENDPOINTS, appname, password)
+		cloudantAccounts, err := ca.GetCloudantAccounts(cliConnection, httpClient, ENDPOINTS, appname, password)
 		bcr_utils.CheckErrorFatal(err)
-		if len(dbs) == 0 && !all_dbs {
+		if all_dbs {
+			dbs = bcr_utils.GetAllDatabases(httpClient, cloudantAccounts[0])
+		} else if len(dbs) == 0 {
 			dbs, err = bcr_prompts.GetDatabases(httpClient, cloudantAccounts[0])
 			bcr_utils.CheckErrorFatal(err)
-		} else if all_dbs {
-			dbs = bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])
 		} else {
-			all_dbs := bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])
+			dbs_list := bcr_utils.GetAllDatabases(httpClient, cloudantAccounts[0])
 			for i := 0; i < len(dbs); i++ {
-				if !bcr_utils.IsValid(dbs[i], all_dbs) {
+				if !bcr_utils.IsValid(dbs[i], dbs_list) {
 					bcr_utils.CheckErrorFatal(errors.New(dbs[i] + " is not a valid database in '" +
 						terminal.ColorizeBold(cloudantAccounts[0].Endpoint, 36) + "'"))
 				}
@@ -364,11 +351,12 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 				// UsageDetails is optional
 				// It is used to show help of usage of each command
 				UsageDetails: plugin.Usage{
-					Usage: "cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD]\n",
+					Usage: "cf cloudant-replicate [-a APP] [-d DATABASE] [--all-dbs] [-p PASSWORD]\n",
 					Options: map[string]string{
-						"-a": "App",
-						"-d": "Database (* selects all databases)",
-						"-p": "Password"},
+						"-a":        "App",
+						"-d":        "Database",
+						"--all-dbs": "Select all databases",
+						"-p":        "Password"},
 				},
 			},
 		},
