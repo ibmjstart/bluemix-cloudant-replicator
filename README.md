@@ -3,9 +3,9 @@ A [cf cli](https://github.com/cloudfoundry/cli) plugin for configuring continuou
 
 ## Installation
 1. download the appropriate binary
-	* Mac OS X: [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.0/bc-replicator_0.1.0_osx.zip)
-	* Windows:  [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.0/bc-replicator_0.1.0_win64.zip)
-	* Linux:    [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.0/bc-replicator_0.1.0_linux.zip)
+	* Mac OS X: [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.1/bc-replicator_0.1.1_osx.zip)
+	* Windows:  [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.1/bc-replicator_0.1.1_win64.zip)
+	* Linux:    [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.1/bc-replicator_0.1.1_linux.zip)
 2. install the plugin via **cf install-plugin PATH_TO_PLUGIN_BINARY** 
 	* if you get a permission error run: **chmod +x PATH_TO_PLUGIN_BINARY** on the binary
 3. verify the plugin installed by looking for it with **cf plugins** 
