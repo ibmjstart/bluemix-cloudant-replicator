@@ -11,6 +11,7 @@ import (
 	"github.com/ibmjstart/bluemix-cloudant-replicator/utils"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -160,7 +161,10 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 					resp, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
 					defer resp.Body.Close()
 					respBody, _ := ioutil.ReadAll(resp.Body)
-					if resp.Status != "409 Conflict" && resp.Status != "201 Created" {
+					split_status := strings.Split(resp.Status, " ")[0]
+					status, err := strconv.Atoi(split_status)
+					bcr_utils.CheckErrorFatal(err)
+					if status != 409 && status != 201 && status != 202 {
 						responses <- bcr_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody),
 							Err: errors.New("Trouble creating " + rep["_id"].(string) + " for '" + account.Endpoint + "'")}
 					} else {
@@ -188,7 +192,10 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.C
 			resp, err := bcr_utils.MakeRequest(httpClient, "PUT", url, "", headers)
 			defer resp.Body.Close()
 			respBody, _ := ioutil.ReadAll(resp.Body)
-			if resp.Status != "201 Created" && resp.Status != "412 Precondition Failed" {
+			split_status := strings.Split(resp.Status, " ")[0]
+			status, err := strconv.Atoi(split_status)
+			bcr_utils.CheckErrorFatal(err)
+			if status != 201 && status != 202 && status != 412 {
 				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody),
 					Err: errors.New(account.Endpoint + " replicator database status unknown")}
 			} else {
@@ -264,7 +271,10 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.C
 	for i := 0; i < len(cloudantAccounts); i++ {
 		go func(db string, httpClient *http.Client, account cam.CloudantAccount, cloudantAccounts []cam.CloudantAccount) {
 			r := getPermissions(db, httpClient, account)
-			if r.Status == "200 OK" && r.Err == nil {
+			split_status := strings.Split(r.Status, " ")[0]
+			status, err := strconv.Atoi(split_status)
+			bcr_utils.CheckErrorFatal(err)
+			if status <= 200 && r.Err == nil {
 				responses <- r
 				responses <- modifyPermissions(r.Body, db, httpClient, account, cloudantAccounts)
 			} else {
@@ -292,7 +302,10 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []cam.CloudantAccou
 			headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.Cookie}
 			r, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
 			defer r.Body.Close()
-			if r.Status != "200 OK" || err != nil {
+			split_status := strings.Split(r.Status, " ")[0]
+			status, err := strconv.Atoi(split_status)
+			bcr_utils.CheckErrorFatal(err)
+			if status != 200 || err != nil {
 				err = errors.New("Failed to delete cookie for '" + account.Endpoint + "'")
 			}
 			respBody, _ := ioutil.ReadAll(r.Body)
