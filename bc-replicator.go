@@ -46,6 +46,7 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 		var appname, password string
 		var dbs []string
 		var err error
+		all_dbs := false
 		loggedIn, _ := cliConnection.IsLoggedIn()
 		if !loggedIn || err != nil {
 			fmt.Println("Please log in first\n")
@@ -59,6 +60,8 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 				dbs = strings.Split(args[i+1], ",")
 			case "-p":
 				password = args[i+1]
+			case "--all-dbs":
+				all_dbs = true
 			}
 		}
 		if appname == "" {
@@ -83,10 +86,10 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 		var httpClient = &http.Client{}
 		cloudantAccounts, err := cam.GetCloudantAccounts(cliConnection, httpClient, ENDPOINTS, appname, password)
 		bcr_utils.CheckErrorFatal(err)
-		if len(dbs) == 0 {
+		if len(dbs) == 0 && !all_dbs {
 			dbs, err = bcr_prompts.GetDatabases(httpClient, cloudantAccounts[0])
 			bcr_utils.CheckErrorFatal(err)
-		} else if len(dbs) == 1 && dbs[0] == "*" {
+		} else if all_dbs {
 			dbs = bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])
 		} else {
 			all_dbs := bcr_prompts.GetAllDatabases(httpClient, cloudantAccounts[0])

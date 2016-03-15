@@ -128,7 +128,8 @@ func getCookie(account CloudantAccount, httpClient *http.Client) string {
 	url := "https://" + account.Username + ".cloudant.com/_session"
 	body := "name=" + account.Username + "&password=" + account.Password
 	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
-	resp, _ := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
+	resp, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
+	bcr_utils.CheckErrorFatal(err)
 	cookie := resp.Header.Get("Set-Cookie")
 	resp.Body.Close()
 	return cookie
