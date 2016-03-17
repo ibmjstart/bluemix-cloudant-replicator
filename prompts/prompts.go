@@ -34,21 +34,20 @@ func GetPassword() string {
 *	Lists all databases for a specified CloudantAccount and
 *	prompts the user to select one
  */
-func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) ([]string, error) {
+func GetDatabases(httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) ([]string, error) {
 	reader := bufio.NewReader(os.Stdin)
-	all_dbs := bcr_utils.GetAllDatabases(httpClient, account)
+	all_dbs := bcr_utils.GetAllDatabases(httpClient, cloudantAccounts)
 	if len(all_dbs) == 0 {
-		return all_dbs, errors.New("No databases found for CloudantNoSQLDB service in '" +
-			terminal.ColorizeBold(account.Endpoint, 36) + "'")
+		return all_dbs, errors.New("No databases found for CloudantNoSQLDB services in any region")
 	}
-	fmt.Println("Current databases:\n")
+	fmt.Println("Current databases across all regions:\n")
 	for i := 0; i < len(all_dbs); i++ {
 		fmt.Println(strconv.Itoa(i+1) + ". " + terminal.ColorizeBold(all_dbs[i], 36))
 	}
 	if len(all_dbs) > 1 {
 		fmt.Println(strconv.Itoa(len(all_dbs)+1) + ". sync all databases")
 	}
-	fmt.Print("\nWhich database would you like to sync?" + terminal.ColorizeBold(">", 36))
+	fmt.Print("\nWhich database would you like to sync?" + terminal.ColorizeBold("> ", 36))
 	d, _, _ := reader.ReadLine()
 	selected_dbs := strings.Split(string(d), ",")
 	fmt.Println()
@@ -93,7 +92,7 @@ func GetAppName(cliConnection plugin.CliConnection) (string, error) {
 		return "", errors.New("No apps found in org '" + terminal.ColorizeBold(currOrg.Name, 36) + "' at '" +
 			terminal.ColorizeBold(currEndpoint, 36) + "'.\nPlease log in and point to an org with available apps.\n")
 	}
-	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + terminal.ColorizeBold(">", 36))
+	fmt.Print("\nFrom the list above, which app's databases would you like to sync?" + terminal.ColorizeBold("> ", 36))
 	appName, _, _ := reader.ReadLine()
 	fmt.Println()
 	if i, err := strconv.Atoi(string(appName)); err == nil {

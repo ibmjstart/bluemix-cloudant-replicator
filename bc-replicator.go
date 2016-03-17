@@ -50,7 +50,7 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 			fmt.Println("Please log in first\n")
 			cliConnection.CliCommand("login")
 		}
-		appname, dbs, password, all_dbs := bcr_utils.HandleFlags(args)
+		appname, dbs, password, all_dbs, create_dbs := bcr_utils.HandleFlags(args)
 		if appname == "" {
 			appname, err = bcr_prompts.GetAppName(cliConnection)
 			bcr_utils.CheckErrorNonFatal(err)
@@ -74,21 +74,16 @@ func (c *BCReplicatorPlugin) Run(cliConnection plugin.CliConnection, args []stri
 		cloudantAccounts, err := ca.GetCloudantAccounts(cliConnection, httpClient, ENDPOINTS, appname, password)
 		bcr_utils.CheckErrorFatal(err)
 		if all_dbs {
-			dbs = bcr_utils.GetAllDatabases(httpClient, cloudantAccounts[0])
+			dbs = bcr_utils.GetAllDatabases(httpClient, cloudantAccounts)
 		} else if len(dbs) == 0 {
-			dbs, err = bcr_prompts.GetDatabases(httpClient, cloudantAccounts[0])
+			dbs, err = bcr_prompts.GetDatabases(httpClient, cloudantAccounts)
 			bcr_utils.CheckErrorFatal(err)
-		} else {
-			dbs_list := bcr_utils.GetAllDatabases(httpClient, cloudantAccounts[0])
-			for i := 0; i < len(dbs); i++ {
-				if !bcr_utils.IsValid(dbs[i], dbs_list) {
-					bcr_utils.CheckErrorFatal(errors.New(dbs[i] + " is not a valid database in '" +
-						terminal.ColorizeBold(cloudantAccounts[0].Endpoint, 36) + "'"))
-				}
-			}
 		}
-		createReplicatorDatabases(httpClient, cloudantAccounts)
+		createDatabase("_replicator", httpClient, cloudantAccounts)
 		for i := 0; i < len(dbs); i++ {
+			if create_dbs {
+				createDatabase(dbs[i], httpClient, cloudantAccounts)
+			}
 			shareDatabases(dbs[i], httpClient, cloudantAccounts)
 			createReplicationDocuments(dbs[i], httpClient, cloudantAccounts)
 		}
@@ -139,26 +134,32 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 		for j := 0; j < len(cloudantAccounts); j++ {
 			if i != j {
 				go func(httpClient *http.Client, target cam.CloudantAccount, source cam.CloudantAccount, db string) {
-					rep := make(map[string]interface{})
-					rep["_id"] = source.Username + "-" + db
-					rep["source"] = source.Url + "/" + db
-					rep["target"] = target.Url + "/" + db
-					rep["create_target"] = false
-					rep["continuous"] = true
-					bd, _ := json.MarshalIndent(rep, " ", "  ")
-					body := string(bd)
-					headers := map[string]string{"Content-Type": "application/json", "Cookie": account.Cookie}
-					resp, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
-					defer resp.Body.Close()
-					respBody, _ := ioutil.ReadAll(resp.Body)
-					split_status := strings.Split(resp.Status, " ")[0]
-					status, err := strconv.Atoi(split_status)
-					bcr_utils.CheckErrorFatal(err)
-					if status != 409 && status != 201 && status != 202 {
-						responses <- bcr_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody),
-							Err: errors.New("Trouble creating " + rep["_id"].(string) + " for '" + account.Endpoint + "'")}
+					source_dbs := bcr_utils.GetDatabases(httpClient, source)
+					target_dbs := bcr_utils.GetDatabases(httpClient, target)
+					if bcr_utils.IsValid(db, source_dbs) && bcr_utils.IsValid(db, target_dbs) {
+						rep := make(map[string]interface{})
+						rep["_id"] = source.Username + "-" + db
+						rep["source"] = source.Url + "/" + db
+						rep["target"] = target.Url + "/" + db
+						rep["create_target"] = false
+						rep["continuous"] = true
+						bd, _ := json.MarshalIndent(rep, " ", "  ")
+						body := string(bd)
+						headers := map[string]string{"Content-Type": "application/json", "Cookie": account.Cookie}
+						resp, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
+						defer resp.Body.Close()
+						respBody, _ := ioutil.ReadAll(resp.Body)
+						split_status := strings.Split(resp.Status, " ")[0]
+						status, err := strconv.Atoi(split_status)
+						bcr_utils.CheckErrorFatal(err)
+						if status != 409 && status != 201 && status != 202 {
+							responses <- bcr_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody),
+								Err: errors.New("Trouble creating " + rep["_id"].(string) + " for '" + account.Endpoint + "'")}
+						} else {
+							responses <- bcr_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody), Err: err}
+						}
 					} else {
-						responses <- bcr_utils.HttpResponse{RequestType: "POST", Status: resp.Status, Body: string(respBody), Err: err}
+						responses <- bcr_utils.HttpResponse{}
 					}
 				}(httpClient, account, cloudantAccounts[j], db)
 			}
@@ -168,16 +169,12 @@ func createReplicationDocuments(db string, httpClient *http.Client, cloudantAcco
 	close(responses)
 }
 
-/*
-*	Sends a request to create a _replicator database for each
-*	Cloudant Account.
- */
-func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
-	fmt.Println("\nCreating replicator databases\n")
+func createDatabase(db string, httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) {
+	fmt.Println("\nVerifying existence of '" + terminal.ColorizeBold(db, 36) + "' database for all regions")
 	responses := make(chan bcr_utils.HttpResponse)
 	for i := 0; i < len(cloudantAccounts); i++ {
-		go func(httpClient *http.Client, account cam.CloudantAccount) {
-			url := "https://" + account.Username + ".cloudant.com/_replicator"
+		go func(db string, httpClient *http.Client, account cam.CloudantAccount) {
+			url := "https://" + account.Username + ".cloudant.com/" + db
 			headers := map[string]string{"Content-Type": "application/json", "Cookie": account.Cookie}
 			resp, err := bcr_utils.MakeRequest(httpClient, "PUT", url, "", headers)
 			defer resp.Body.Close()
@@ -185,13 +182,17 @@ func createReplicatorDatabases(httpClient *http.Client, cloudantAccounts []cam.C
 			split_status := strings.Split(resp.Status, " ")[0]
 			status, err := strconv.Atoi(split_status)
 			bcr_utils.CheckErrorFatal(err)
-			if status != 201 && status != 202 && status != 412 {
-				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody),
-					Err: errors.New(account.Endpoint + " replicator database status unknown")}
+			if status == 201 || status == 202 { // && status != 412 {
+				fmt.Println("Created '" + terminal.ColorizeBold(db, 36) + "' in '" + terminal.ColorizeBold(account.Endpoint, 36) + "'")
+				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody), Err: err}
+			} else if status == 412 {
+				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody), Err: err}
 			} else {
+				err := errors.New("Problem creating '" + terminal.ColorizeBold(db, 36) + "' in '" +
+					terminal.ColorizeBold(account.Endpoint, 36) + "'")
 				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: resp.Status, Body: string(respBody), Err: err}
 			}
-		}(httpClient, cloudantAccounts[i])
+		}(db, httpClient, cloudantAccounts[i])
 	}
 	bcr_utils.CheckHttpResponses(responses, len(cloudantAccounts))
 	close(responses)
@@ -262,16 +263,15 @@ func shareDatabases(db string, httpClient *http.Client, cloudantAccounts []cam.C
 		go func(db string, httpClient *http.Client, account cam.CloudantAccount, cloudantAccounts []cam.CloudantAccount) {
 			r := getPermissions(db, httpClient, account)
 			split_status := strings.Split(r.Status, " ")[0]
-			status, err := strconv.Atoi(split_status)
-			bcr_utils.CheckErrorFatal(err)
+			status, _ := strconv.Atoi(split_status)
 			if status <= 200 && r.Err == nil {
 				responses <- r
 				responses <- modifyPermissions(r.Body, db, httpClient, account, cloudantAccounts)
 			} else {
-				r.Err = errors.New("Permissions GET request failed for '" + terminal.ColorizeBold(account.Endpoint, 36) + "'")
+				r.Err = errors.New("Permissions GET request failed for '" + terminal.ColorizeBold(account.Endpoint, 36) +
+					"'\nUse the '" + terminal.ColorizeBold("--create", 33) + "' argument to create non-existing databases")
 				responses <- r
-				responses <- bcr_utils.HttpResponse{RequestType: "PUT", Status: "Never Sent", Body: "",
-					Err: errors.New("Could not modify permission for '" + terminal.ColorizeBold(account.Endpoint, 36) + "' due to GET failure")}
+				responses <- bcr_utils.HttpResponse{}
 			}
 		}(db, httpClient, cloudantAccounts[i], cloudantAccounts)
 	}
@@ -288,15 +288,14 @@ func deleteCookies(httpClient *http.Client, cloudantAccounts []cam.CloudantAccou
 	for i := 0; i < len(cloudantAccounts); i++ {
 		go func(httpClient *http.Client, account cam.CloudantAccount) {
 			url := "https://" + account.Username + ".cloudant.com/_session"
-			body := "name=" + account.Username + "&password=" + account.Password
-			headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Cookie": account.Cookie}
-			r, err := bcr_utils.MakeRequest(httpClient, "POST", url, body, headers)
+			headers := map[string]string{"Cookie": account.Cookie}
+			r, err := bcr_utils.MakeRequest(httpClient, "DELETE", url, "", headers)
 			defer r.Body.Close()
 			split_status := strings.Split(r.Status, " ")[0]
 			status, err := strconv.Atoi(split_status)
 			bcr_utils.CheckErrorFatal(err)
 			if status != 200 || err != nil {
-				err = errors.New("Failed to delete cookie for '" + account.Endpoint + "'")
+				err = errors.New("Failed to delete cookie for '" + terminal.ColorizeBold(account.Endpoint, 36) + "'")
 			}
 			respBody, _ := ioutil.ReadAll(r.Body)
 			responses <- bcr_utils.HttpResponse{RequestType: "POST", Status: r.Status, Body: string(respBody), Err: err}
@@ -356,6 +355,7 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 						"-a":        "App",
 						"-d":        "Database",
 						"--all-dbs": "Select all databases",
+						"--create":  "Create non-existing databases",
 						"-p":        "Password"},
 				},
 			},

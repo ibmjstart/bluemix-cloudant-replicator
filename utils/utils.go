@@ -108,32 +108,62 @@ func GetAllApps(cliConnection plugin.CliConnection) ([]string, error) {
 	return apps_list, nil
 }
 
+func GetDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
+	var dbs []string
+	url := "https://" + account.Username + ".cloudant.com/_all_dbs"
+	headers := map[string]string{"Cookie": account.Cookie}
+	resp, err := MakeRequest(httpClient, "GET", url, "", headers)
+	if CheckErrorNonFatal(err) {
+		return dbs
+	}
+	defer resp.Body.Close()
+	respBody, _ := ioutil.ReadAll(resp.Body)
+	dbsStr := string(respBody)
+	json.Unmarshal([]byte(dbsStr), &dbs)
+	resp.Body.Close()
+	return dbs
+}
+
 /*
 *	Requests all databases for a given Cloudant account
 *	and returns them as a string array
  */
-func GetAllDatabases(httpClient *http.Client, account cam.CloudantAccount) []string {
-	url := "https://" + account.Username + ".cloudant.com/_all_dbs"
-	headers := map[string]string{"Cookie": account.Cookie}
-	resp, _ := MakeRequest(httpClient, "GET", url, "", headers)
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	dbsStr := string(respBody)
-	var dbs []string
-	json.Unmarshal([]byte(dbsStr), &dbs)
-	resp.Body.Close()
-	var noRepDbs []string
-	for i := 0; i < len(dbs); i++ {
-		if dbs[i] != "_replicator" {
-			noRepDbs = append(noRepDbs, dbs[i])
+func GetAllDatabases(httpClient *http.Client, cloudantAccounts []cam.CloudantAccount) []string {
+	var all_dbs []string
+	db_ch := make(chan []string)
+	for i := 0; i < len(cloudantAccounts); i++ {
+		go func(httpClient *http.Client, account cam.CloudantAccount) {
+			dbs := GetDatabases(httpClient, account)
+			db_ch <- dbs
+		}(httpClient, cloudantAccounts[i])
+	}
+	num_responses := 0
+	for {
+		select {
+		case dbs := <-db_ch:
+			if len(dbs) != 0 {
+				for j := 0; j < len(dbs); j++ {
+					if dbs[j] != "_replicator" && !IsValid(dbs[j], all_dbs) {
+						all_dbs = append(all_dbs, dbs[j])
+					}
+				}
+			}
+			num_responses += 1
+		case <-time.After(50 * time.Millisecond):
+			continue
+		}
+		if num_responses == len(cloudantAccounts) {
+			break
 		}
 	}
-	return noRepDbs
+	return all_dbs
 }
 
-func HandleFlags(args []string) (string, []string, string, bool) {
+func HandleFlags(args []string) (string, []string, string, bool, bool) {
 	var appname, password string
 	var dbs []string
 	all_dbs := false
+	create := false
 	err := errors.New("Problem with command invocation. For help look to '" +
 		terminal.ColorizeBold("cf help cloudant-replicate", 33) + "'")
 	for i := 1; i < len(args); i++ {
@@ -155,7 +185,9 @@ func HandleFlags(args []string) (string, []string, string, bool) {
 			password = args[i+1]
 		case "--all-dbs":
 			all_dbs = true
+		case "--create":
+			create = true
 		}
 	}
-	return appname, dbs, password, all_dbs
+	return appname, dbs, password, all_dbs, create
 }
