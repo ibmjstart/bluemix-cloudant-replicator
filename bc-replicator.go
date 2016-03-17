@@ -352,11 +352,11 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 				UsageDetails: plugin.Usage{
 					Usage: "cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD] [--all-dbs] [--create]\n",
 					Options: map[string]string{
-						"-a":        "App",
-						"-d":        "Database",
-						"--all-dbs": "Select all databases",
-						"--create":  "Create non-existing databases",
-						"-p":        "Password"},
+						"a":        "App",
+						"d":        "Database",
+						"-all-dbs": "Select all databases",
+						"-create":  "Create non-existing databases",
+						"p":        "Password"},
 				},
 			},
 		},
