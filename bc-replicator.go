@@ -350,7 +350,7 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 				// UsageDetails is optional
 				// It is used to show help of usage of each command
 				UsageDetails: plugin.Usage{
-					Usage: "cf cloudant-replicate [-a APP] [-d DATABASE] [--all-dbs] [-p PASSWORD]\n",
+					Usage: "cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD] [--all-dbs] [--create]\n",
 					Options: map[string]string{
 						"-a":        "App",
 						"-d":        "Database",
