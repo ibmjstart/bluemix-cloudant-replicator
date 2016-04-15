@@ -2,13 +2,14 @@
 A [cf cli](https://github.com/cloudfoundry/cli) plugin for configuring continuous replication between Cloudant databases in multiple regions of [IBM Bluemix](http://bluemix.net)
 
 ## Installation
-1. download the appropriate binary
+1. download and install the cf cli
+2. download the appropriate binary
 	* Mac OS X: [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.2/bc-replicator_0.1.2_osx.zip)
 	* Windows:  [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.2/bc-replicator_0.1.2_win64.zip)
 	* Linux:    [64-bit](https://github.com/ibmjstart/bluemix-cloudant-replicator/releases/download/0.1.2/bc-replicator_0.1.2_linux.zip)
-2. install the plugin via **cf install-plugin PATH_TO_PLUGIN_BINARY** 
+3. install the plugin via **cf install-plugin PATH_TO_PLUGIN_BINARY** 
 	* if you get a permission error run: **chmod +x PATH_TO_PLUGIN_BINARY** on the binary
-3. verify the plugin installed by looking for it with **cf plugins** 
+4. verify the plugin installed by looking for it with **cf plugins** 
 
 > If you've already installed the plugin and are updating, run **cf uninstall-plugin bluemix-cloudant-replicator** before the install.
 
