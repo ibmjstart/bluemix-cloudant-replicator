@@ -333,9 +333,9 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 	return plugin.PluginMetadata{
 		Name: "bluemix-cloudant-replicator",
 		Version: plugin.VersionType{
-			Major: 1,
-			Minor: 0,
-			Build: 0,
+			Major: 0,
+			Minor: 1,
+			Build: 3,
 		},
 		MinCliVersion: plugin.VersionType{
 			Major: 6,
@@ -352,8 +352,8 @@ func (c *BCReplicatorPlugin) GetMetadata() plugin.PluginMetadata {
 				UsageDetails: plugin.Usage{
 					Usage: "cf cloudant-replicate [-a APP] [-d DATABASE] [-p PASSWORD] [--all-dbs] [--create]\n",
 					Options: map[string]string{
-						"a":        "App",
-						"d":        "Database",
+						"a":        "App name",
+						"d":        "Database names to replicate (comma-separated)",
 						"-all-dbs": "Select all databases",
 						"-create":  "Create non-existing databases",
 						"p":        "Password"},
