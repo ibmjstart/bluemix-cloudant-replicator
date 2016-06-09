@@ -44,6 +44,8 @@ Running the command will create pair-wise replications between the databases in 
 
 #### Notes
 
+Configuring continuous replication will result in frequent API calls between the configured regions. With the default ("Shared") plan on Bluemix, these calls will count toward the totals on your monthly bill. Consider setting Spending notifications to avoid unexpected charges. Alternatively, consider upgrading to an Enterprise plan that is better suited for the continuous replication feature.
+
 There may be a case where you do not want to use all locations or you may want to add additional endpoints. To do this, you must fork the project and modify ENDPOINTS(found in bc-replicator.go). When you do this, it is up to you to recompile the code and re-install the plugin following the same instructions found above.  The only difference is you will now point install-plugin to the newly compiled binary path.
 
 This plugin was developed to help automate 'Step 3. Configure Cloudant replication' in [this](http://www.ibm.com/developerworks/cloud/library/cl-multi-region-bluemix-apps-with-cloudant-and-dyn-trs/index.html#cmt_4) article.
